@@ -152,6 +152,14 @@
   const yaEnCola = (id) => estado.cola.some((op) => esMia(op) && op.tipo === 'VALIDACION' && op.datos.tratamiento_id === id);
   const porValidar = () => (estado.catalogo?.por_validar || []).filter((t) => !yaEnCola(t.id));
   // Aviso local: la decisión final es del servidor, que vuelve a revisar la vigencia al recibir.
+  /* Formato del DIIO configurado en el servidor ('/^\d{9}$/'), como RegExp.
+     Si no se puede interpretar, se actúa como si no hubiera formato: el
+     servidor igual lo revisa al recibir. */
+  const formatoDiio = () => {
+    const partes = /^\/(.*)\/([a-z]*)$/s.exec(estado.catalogo?.formato_diio || '');
+    if (!partes) return null;
+    try { return new RegExp(partes[1], partes[2].replace(/[^imsu]/g, '')); } catch (e) { return null; }
+  };
   const mvaVigente = () => !!estado.catalogo?.mva && estado.catalogo.mva.vigente_hasta >= hoy();
 
   /* ---------- Servidor ---------- */
@@ -997,9 +1005,12 @@
       if (!categoria) return aviso('Marcá la categoría.', 'error');
       if (!(peso >= 10 && peso <= 1500)) return aviso('El peso va entre 10 y 1.500 kg.', 'error');
 
-      // Con guion adelante es número interno del predio; si no, DIIO.
+      // Si el sistema tiene formato de DIIO y esto no lo cumple, es un número
+      // interno del predio. Sin formato configurado, se toma como DIIO.
+      const formato = formatoDiio();
+      const esDiio = !formato || formato.test(identificacion.replace(/\s+/g, ''));
       const datos = {
-        caravana_visual: identificacion,
+        [esDiio ? 'caravana_visual' : 'numero_interno']: identificacion,
         sexo,
         categoria,
         etapa: ['TERNERA', 'TERNERO'].includes(categoria) ? 'CRIA' : 'RECRIA',

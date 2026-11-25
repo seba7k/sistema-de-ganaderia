@@ -160,7 +160,7 @@ if (puede('registrar_tratamiento')) {
             'ayuda' => 'Se aplica a todos los animales activos del corral',
         ]),
         campo('identificacion', 'O un animal puntual', $errores, 'text', '', [
-            'placeholder' => 'Caravana, número interno o EID',
+            'placeholder' => 'DIIO, número interno o EID',
             'ayuda' => 'Si lo completás, se aplica solo a ese animal',
         ]),
         campo('diagnostico', 'Diagnóstico', $errores, 'text', '', [

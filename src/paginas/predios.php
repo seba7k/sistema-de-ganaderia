@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../db.php';
 require_once __DIR__ . '/../vistas/layout.php';
+require_once __DIR__ . '/../dominio/sag.php';
 
 /**
  * Predios del propietario.
@@ -28,6 +29,19 @@ const TIPOS_PREDIO = [
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     exigir_post_valido('gestionar_predios', $volver);
 
+    /* Alta y edición comparten las reglas. Al editar, el predio tiene que ser
+       de esta organización: el id llega del formulario y se puede cambiar. */
+    $editando = entrada('accion') === 'editar';
+    $predio_id = $editando ? (entrada_entera('predio_id') ?? 0) : 0;
+    $anterior = null;
+    if ($editando) {
+        $anterior = fila('SELECT * FROM establecimientos WHERE organizacion_id = ? AND id = ?', [$org, $predio_id]);
+        if ($anterior === null) {
+            flash('error', 'Ese predio no es de esta organización.');
+            redirigir($volver);
+        }
+    }
+
     $validacion = (new Validacion())
         ->obligatorio('nombre', 'El nombre del predio')
         ->obligatorio('tipo', 'El tipo');
@@ -36,25 +50,71 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $validacion->agregar('tipo', 'Ese tipo de predio no existe.');
     }
     if (entrada('nombre') !== '' && (int) valor(
-        'SELECT COUNT(*) FROM establecimientos WHERE organizacion_id = ? AND nombre = ?',
-        [$org, entrada('nombre')],
+        'SELECT COUNT(*) FROM establecimientos WHERE organizacion_id = ? AND nombre = ? AND id <> ?',
+        [$org, entrada('nombre'), $predio_id],
     ) > 0) {
         $validacion->agregar('nombre', 'Ya hay un predio con ese nombre.');
     }
 
+    /* El RUP identifica al predio ante el SAG: se guarda siempre con el mismo
+       formato y no puede repetirse entre los campos del propietario. */
+    $rup = null;
+    if (entrada('rup') !== '') {
+        $rup = normalizar_rup(entrada('rup'));
+        if ($rup === null) {
+            $validacion->agregar('rup', 'El RUP tiene 9 dígitos: región, provincia, comuna y número del predio (ej: 09.1.01.0001).');
+        } elseif ((int) valor(
+            'SELECT COUNT(*) FROM establecimientos WHERE organizacion_id = ? AND rup = ? AND id <> ?',
+            [$org, $rup, $predio_id],
+        ) > 0) {
+            $validacion->agregar('rup', 'Ese RUP ya está cargado en otro predio.');
+        }
+    }
+
+    // Al editar, los errores vuelven abiertos en el formulario de ese predio.
+    if ($editando) {
+        $_POST['editando'] = (string) $predio_id;
+    }
     $validacion->o_volver($volver);
 
-    consultar(
-        'INSERT INTO establecimientos (organizacion_id, nombre, tipo, rup, comuna, region) VALUES (?, ?, ?, ?, ?, ?)',
-        [
-            $org, entrada('nombre'), entrada('tipo'),
-            entrada('rup') !== '' ? entrada('rup') : null,
-            entrada('comuna') !== '' ? entrada('comuna') : null,
-            entrada('region') !== '' ? entrada('region') : null,
-        ],
-    );
+    $datos = [
+        'nombre' => entrada('nombre'),
+        'tipo'   => entrada('tipo'),
+        'rup'    => $rup,
+        'comuna' => entrada('comuna') !== '' ? entrada('comuna') : null,
+        'region' => entrada('region') !== '' ? entrada('region') : null,
+    ];
 
-    flash('exito', 'Predio «' . entrada('nombre') . '» creado. Elegilo arriba para empezar a cargarle animales.');
+    if (!$editando) {
+        consultar(
+            'INSERT INTO establecimientos (organizacion_id, nombre, tipo, rup, comuna, region) VALUES (?, ?, ?, ?, ?, ?)',
+            [$org, ...array_values($datos)],
+        );
+        flash('exito', 'Predio «' . entrada('nombre') . '» creado. Elegilo arriba para empezar a cargarle animales.');
+        redirigir($volver);
+    }
+
+    $cambios = [];
+    foreach (['nombre' => 'nombre', 'tipo' => 'tipo', 'rup' => 'RUP', 'comuna' => 'comuna', 'region' => 'región'] as $columna => $rotulo) {
+        if ((string) $anterior[$columna] !== (string) $datos[$columna]) {
+            $cambios[] = $rotulo . ': ' . ($anterior[$columna] ?? '—') . ' → ' . ($datos[$columna] ?? '—');
+        }
+    }
+    if ($cambios === []) {
+        flash('error', 'No cambiaste ningún dato de «' . $anterior['nombre'] . '».');
+        redirigir($volver);
+    }
+
+    en_transaccion(static function () use ($org, $predio_id, $datos, $cambios): void {
+        consultar(
+            'UPDATE establecimientos SET nombre = ?, tipo = ?, rup = ?, comuna = ?, region = ? WHERE id = ? AND organizacion_id = ?',
+            [...array_values($datos), $predio_id, $org],
+        );
+        // Cambiar el RUP de un predio con animales es delicado: queda en la bitácora.
+        registrar_bitacora($org, (int) usuario_actual()['id'], 'EDITA_PREDIO', 'establecimientos', $predio_id, implode(' · ', $cambios));
+    });
+
+    flash('exito', 'Predio «' . entrada('nombre') . '» actualizado.');
     redirigir($volver);
 }
 
@@ -83,16 +143,18 @@ echo ayuda_pantalla('¿Cómo funcionan los predios?', [
     'Propietario' => 'Todos los predios cuelgan de un mismo propietario, identificado por su RUT. Es el mismo criterio del registro del SAG.',
     'Predio activo' => 'El sistema muestra un predio a la vez. Hacienda, corrales, alimentación y reproducción solo traen lo de ese campo; sumar predios distintos daría números sin sentido.',
     'Cambiar de predio' => 'Desde el selector de la barra superior, o desde el menú en el teléfono. Lo que se cargue después queda en el predio elegido.',
-    'RUP' => 'El rol único pecuario del predio, si lo tiene. Es el número con el que el SAG identifica el campo, no al dueño.',
+    'RUP' => 'El rol único pecuario del predio, si lo tiene. Es el número con el que el SAG identifica el campo, no al dueño. Tiene 9 dígitos y se guarda como 09.1.01.0001; no puede repetirse entre predios.',
+    'Editar' => 'Cada predio tiene su botón «Editar» para corregir nombre, tipo, RUP o ubicación. Los cambios quedan en la bitácora.',
 ]);
 
 $errores = errores_formulario();
 
-echo abrir_alta('Agregar un predio', 'Otro campo del mismo propietario', $errores !== []);
+$editando = valor_previo('editando');
+echo abrir_alta('Agregar un predio', 'Otro campo del mismo propietario', $errores !== [] && $editando === '');
 echo formulario(url('/predios'), implode('', [
     campo('nombre', 'Nombre', $errores, 'text', '', ['obligatorio' => true, 'placeholder' => 'Ej: Fundo El Sauce']),
     campo('tipo', 'Tipo', $errores, 'select', 'CRIANZA', ['items' => TIPOS_PREDIO]),
-    campo('rup', 'RUP', $errores, 'text', '', ['placeholder' => 'Ej: 12.3.45.0001', 'ayuda' => 'Rol único pecuario del predio']),
+    campo('rup', 'RUP', $errores, 'text', '', ['placeholder' => 'Ej: 09.1.01.0001', 'ayuda' => 'Rol único pecuario del predio: 9 dígitos']),
     campo('comuna', 'Comuna', $errores, 'text', '', ['placeholder' => 'Ej: Loncoche']),
     campo('region', 'Región', $errores, 'text', '', ['placeholder' => 'Ej: La Araucanía']),
 ]), 'Agregar predio');
@@ -134,7 +196,41 @@ echo cerrar_alta();
         <tr>
           <td>
             <span class="principal"><?= h($predio['nombre']) ?></span>
-            <div class="secundario"><?= h(TIPOS_PREDIO[$predio['tipo']] ?? legible($predio['tipo'])) ?><?= $predio['rup'] !== null ? ' · RUP ' . h($predio['rup']) : '' ?></div>
+            <div class="secundario"><?= h(TIPOS_PREDIO[$predio['tipo']] ?? legible($predio['tipo'])) ?><?= $predio['rup'] !== null ? ' · RUP ' . h($predio['rup']) : ' · sin RUP' ?></div>
+            <?php
+            // Si la última edición de este predio falló, el formulario vuelve
+            // abierto con lo que se había escrito; si no, con los datos guardados.
+            $con_error = $editando === (string) $predio['id'];
+            $previo = static fn (string $c): string => $con_error ? valor_previo($c) : (string) ($predio[$c] ?? '');
+            ?>
+            <details class="editar-predio"<?= $con_error ? ' open' : '' ?>>
+              <summary class="boton menudo">Editar</summary>
+              <form method="post" action="<?= h(url('/predios')) ?>" class="formulario">
+                <input type="hidden" name="csrf" value="<?= h(token_csrf()) ?>">
+                <input type="hidden" name="accion" value="editar">
+                <input type="hidden" name="predio_id" value="<?= (int) $predio['id'] ?>">
+                <?php foreach ([
+                    ['nombre', 'Nombre', 'text', ''], ['rup', 'RUP', 'text', '09.1.01.0001'],
+                    ['comuna', 'Comuna', 'text', ''], ['region', 'Región', 'text', ''],
+                ] as [$c, $rotulo, $tipo_campo, $ejemplo]): ?>
+                  <div class="campo<?= $con_error && isset($errores[$c]) ? ' con-error' : '' ?>">
+                    <label for="p<?= (int) $predio['id'] . '_' . $c ?>"><?= h($rotulo) ?></label>
+                    <input id="p<?= (int) $predio['id'] . '_' . $c ?>" type="<?= $tipo_campo ?>" name="<?= $c ?>"
+                           value="<?= h($previo($c)) ?>" placeholder="<?= h($ejemplo) ?>"<?= $c === 'nombre' ? ' required' : '' ?>>
+                    <?php if ($con_error && isset($errores[$c])): ?><div class="error-campo"><?= h($errores[$c]) ?></div><?php endif; ?>
+                  </div>
+                <?php endforeach; ?>
+                <div class="campo">
+                  <label for="p<?= (int) $predio['id'] ?>_tipo">Tipo</label>
+                  <select id="p<?= (int) $predio['id'] ?>_tipo" name="tipo">
+                    <?php foreach (TIPOS_PREDIO as $clave_tipo => $nombre_tipo): ?>
+                      <option value="<?= h($clave_tipo) ?>"<?= $previo('tipo') === $clave_tipo ? ' selected' : '' ?>><?= h($nombre_tipo) ?></option>
+                    <?php endforeach; ?>
+                  </select>
+                </div>
+                <div class="acciones"><button class="boton" type="submit">Guardar cambios</button></div>
+              </form>
+            </details>
           </td>
           <td>
             <?= h($predio['comuna'] ?? '—') ?>

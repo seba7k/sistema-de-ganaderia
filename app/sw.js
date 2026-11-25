@@ -9,7 +9,7 @@
    los teléfonos descartan la copia vieja.
    ============================================================ */
 
-const VERSION = 'terreno-2.4.0';
+const VERSION = 'terreno-2.4.1';
 const ARCHIVOS = ['./', 'index.html', 'app.css', 'app.js', 'manifest.webmanifest', 'icono-192.png', 'icono-512.png'];
 
 self.addEventListener('install', (evento) => {

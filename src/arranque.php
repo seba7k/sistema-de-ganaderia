@@ -26,6 +26,7 @@ define('APP_DEMO', !empty($configuracion['demo']));
 define('GESTION_AVANZADA', !empty($configuracion['gestion_avanzada']));
 define('URL_AMIGABLES', !isset($configuracion['url_amigables']) || $configuracion['url_amigables']);
 define('MINUTOS_INACTIVIDAD', (int) (isset($configuracion['minutos_inactividad']) ? $configuracion['minutos_inactividad'] : 60));
+define('FORMATO_DIIO', isset($configuracion['formato_diio']) && is_string($configuracion['formato_diio']) ? trim($configuracion['formato_diio']) : '');
 define('DIAS_SESION_APP', (int) (isset($configuracion['dias_sesion_app']) ? $configuracion['dias_sesion_app'] : 30));
 
 define('CONFIG_BD', array_merge(
@@ -106,6 +107,11 @@ function requisitos_pendientes()
     }
     if (!extension_loaded('mbstring')) {
         $pendientes[] = 'Falta la extensión mbstring. En cPanel: «Select PHP Version» → pestaña Extensions → marcar mbstring.';
+    }
+
+    if (FORMATO_DIIO !== '' && @preg_match(FORMATO_DIIO, '') === false) {
+        $pendientes[] = 'El «formato_diio» de config.php no es una expresión regular válida. '
+            . 'Corregilo, o dejalo vacío para no revisar el formato del DIIO.';
     }
 
     if ($bd['motor'] === 'sqlite') {
