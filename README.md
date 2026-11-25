@@ -177,6 +177,17 @@ ni los trámites ante el SAG.
 Con `gestion_avanzada` en true se suman, además: carencia con bloqueo de faena,
 recetas con descuento de bodega, «Por reponer», y cierre de lote con margen neto.
 
+### v1.4.0 — Automatizaciones
+
+| Automatización | Dónde |
+|---|---|
+| **Bloqueo sanitario por resguardo** | Pantalla **Salidas y FMA** (`src/salidas.php`): venta, faena o traslado a otro predio por lista de DIIO. Un animal con un medicamento en período de resguardo a la fecha de la salida no sale, esté o no validado el tratamiento por el MVA; el mensaje dice el producto y desde qué día puede salir. La venta por lote también mira la fecha de la venta. |
+| **Borrador de FMA y planilla para SIPEC Web** | Cada salida deja un PDF con los datos del Formulario de Movimiento Animal (origen y destino con RUP, transporte, DIIO) y un Excel con un DIIO por fila. El FMA oficial lo emite el SAG; la planilla hay que compararla con la plantilla vigente de SIPEC antes de subirla. |
+| **Cálculo automático de raciones** | Alimentación → «Ración calculada por corral» (`src/dominio/raciones.php`): consumo de materia seca según peso, categoría y ganancia diaria (medida con los pesajes o la esperada por categoría), en kilos tal cual por día y por entrega, y kilos de cada ingrediente con los días de bodega que quedan. Si una entrega no trae kilos planificados, usa este cálculo. |
+| **Descuento de bodega y alerta de stock** | Al confirmar una entrega o un tratamiento se descuenta la bodega, y el mensaje avisa en el momento si algún insumo quedó en su stock mínimo o por debajo. |
+| **Exportación con filtros** | **Exportar**: inventario filtrable por categoría, sexo, etapa, corral, raza, fecha de nacimiento, peso, estado y resguardo, con atajos («Terneros nacidos en los últimos 30 días», «Aptos para venta»…); los demás listados por rango de fechas. Vista previa con el conteo, y descarga en **Excel (.xlsx)**, PDF o CSV. El Excel se arma sin librerías (`src/xlsx.php`). |
+| **Lectura del DIIO sin tipeo** | `app/lector.js`, en la web y en la app de terreno: botón **Cámara** (código de barras/QR y, donde el navegador lo trae, OCR del número impreso con confirmación) y botón **Bastón RFID** por Bluetooth (puerto serie BLE). Los bastones en modo teclado escriben solos en el campo. Requiere Chrome o Edge y HTTPS; en iPhone, solo el bastón en modo teclado. |
+
 ## Estructura
 
 ```
@@ -189,7 +200,7 @@ php/
 ├── esquema.sqlite.sql     Las mismas tablas para SQLite (desarrollo)
 ├── seed.php               Rehace la base con la demostración — solo por consola
 ├── estilos.css, app.js    Interfaz web
-├── app/                   App de terreno (PWA): index.html, app.js, app.css, sw.js, manifest
+├── app/                   App de terreno (PWA): index.html, app.js, lector.js, app.css, sw.js, manifest
 ├── pruebas/               Pruebas de punta a punta (bloqueada por .htaccess)
 └── src/                   Código (bloqueado por .htaccess)
     ├── arranque.php       Configuración, dirección base y chequeo de requisitos
@@ -203,6 +214,10 @@ php/
     ├── dominio/           Cálculos puros: carencia, GDP/FCR, cierre, reproducción
     ├── vistas/            Layout y páginas de error
     ├── pdf.php            Generador de PDF sin librerías: listados y fichas
+    ├── xlsx.php           Generador de Excel (.xlsx) sin librerías
+    ├── exportacion.php    Listados exportables y sus filtros
+    ├── salidas.php        Venta, faena y traslado con bloqueo sanitario
+    ├── documentos_sag.php Borrador de FMA y planilla para SIPEC Web
     └── paginas/           Una por sección del menú, la ficha del animal, los
                            predios, la bitácora y las exportaciones
 ```

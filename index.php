@@ -170,6 +170,7 @@ $paginas = array(
     '/predios'      => 'predios',
     '/bitacora'     => 'bitacora',
     '/exportar'     => 'exportar',
+    '/salidas'      => 'salidas',
 );
 
 // Sin gestión avanzada, esas pantallas no existen: el sistema queda en el ciclo

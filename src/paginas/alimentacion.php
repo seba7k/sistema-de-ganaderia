@@ -223,6 +223,8 @@ echo ayuda_pantalla('¿Cómo se lee esta pantalla?', [
     'Receta' => 'De qué insumos de bodega se hace la ración y en qué proporción. Cada entrega descuenta esos insumos del stock automáticamente; si no alcanza, la entrega no se guarda hasta registrar la compra.',
     'Corral o animal' => 'En feedlot se alimenta el corral completo. En cría se puede suplementar a un animal puntual (una vaca flaca, un ternero guacho).',
     'Conversión (FCR)' => 'Kilos de materia seca que hicieron falta para producir un kilo de carne. Menor es mejor; en feedlot suele estar entre 6 y 8.',
+    'Ración calculada' => 'Lo que cada corral necesita por día: consumo de materia seca según el peso, la categoría y la ganancia diaria de cada animal (medida con sus pesajes, o la esperada para su categoría), pasado a kilos tal cual con la ración que viene recibiendo. Si al entregar no se cargan kilos planificados, se usa este cálculo.',
+    'Aviso de stock' => 'Al confirmar una entrega, la bodega se descuenta sola; si algún ingrediente queda en su stock mínimo o por debajo, el mensaje lo avisa en el momento.',
 ]);
 
 $errores = errores_formulario();
@@ -277,7 +279,7 @@ if (puede('registrar_entrega')) {
             'min' => '1', 'max' => '6', 'ayuda' => 'La primera, la segunda…',
         ]),
         campo('kg_planificados', 'Kilos planificados', $errores, 'number', '', [
-            'step' => '0.1', 'min' => '0', 'ayuda' => 'Tal cual, según la programación',
+            'step' => '0.1', 'min' => '0', 'ayuda' => 'Vacío: el sistema lo calcula según peso, categoría y ganancia diaria',
         ]),
     ]), 'Registrar entrega');
     echo cerrar_alta();
@@ -373,6 +375,66 @@ if (GESTION_AVANZADA && puede('gestionar_raciones')) {
   <?php endif; ?>
 </section>
 
+<?php
+/* Ración calculada: lo que necesita hoy cada corral con animales. */
+$calculos = [];
+foreach (filas('SELECT c.id, c.nombre FROM corrales c WHERE c.organizacion_id = ?' . filtro_predio('c') . ' ORDER BY c.nombre', [$org]) as $corral_calculo) {
+    $calculo = racion_calculada_corral($org, (int) $corral_calculo['id']);
+    if ($calculo !== null) {
+        $calculos[] = $calculo + ['corral' => $corral_calculo['nombre']];
+    }
+}
+?>
+<?php if ($calculos !== []): ?>
+<div class="bloque">
+  <header>
+    <div>
+      <h2>Ración calculada por corral</h2>
+      <div class="sub">Necesidad de hoy según peso, categoría y ganancia diaria. Es el plan que se usa si al entregar no se cargan kilos planificados.</div>
+    </div>
+  </header>
+  <div class="tabla-scroll">
+    <table>
+      <thead>
+        <tr>
+          <th>Corral</th><th class="num">Cabezas</th><th class="num">Peso medio</th><th class="num">Ganancia diaria</th>
+          <th class="num">MS por día</th><th>Ración</th><th class="num">Tal cual por día</th><th class="num">Por entrega</th>
+          <?php if (GESTION_AVANZADA): ?><th>Ingredientes por día · bodega</th><?php endif; ?>
+        </tr>
+      </thead>
+      <tbody>
+      <?php foreach ($calculos as $c): ?>
+        <tr>
+          <td><span class="principal"><?= h($c['corral']) ?></span></td>
+          <td class="num"><?= numero($c['cabezas']) ?></td>
+          <td class="num"><?= kg($c['peso_medio']) ?></td>
+          <td class="num"><?= numero($c['gdp_media'], 2) ?> kg/d
+            <div class="secundario"><?= $c['con_gdp_medida'] === $c['cabezas'] ? 'medida' : ($c['con_gdp_medida'] === 0 ? 'esperada' : numero($c['con_gdp_medida']) . ' medidas') ?></div></td>
+          <td class="num"><?= kg($c['kg_ms_dia']) ?></td>
+          <td><?= $c['racion'] !== null ? h($c['racion']['nombre']) : '<span class="secundario">Sin entregas en el mes: elegí la ración al entregar</span>' ?></td>
+          <td class="num principal"><?= $c['kg_tal_cual_dia'] !== null ? kg($c['kg_tal_cual_dia']) : '—' ?></td>
+          <td class="num"><?= $c['kg_por_entrega'] !== null ? kg($c['kg_por_entrega']) : '—' ?>
+            <div class="secundario"><?= numero($c['entregas_por_dia']) ?> al día</div></td>
+          <?php if (GESTION_AVANZADA): ?>
+          <td>
+            <?php foreach ($c['ingredientes'] as $ingrediente): ?>
+              <div class="secundario"><?= h($ingrediente['nombre']) ?> <?= kg($ingrediente['kg_dia']) ?>
+                · <?= $ingrediente['dias_cubiertos'] === null ? '—' : insignia(
+                    'alcanza ' . numero($ingrediente['dias_cubiertos']) . ' d',
+                    $ingrediente['dias_cubiertos'] < 7 ? 'riesgo' : ($ingrediente['dias_cubiertos'] < 15 ? 'aviso' : 'ok'),
+                ) ?></div>
+            <?php endforeach; ?>
+            <?php if ($c['ingredientes'] === [] && $c['racion'] !== null): ?><span class="secundario">Ración sin receta</span><?php endif; ?>
+          </td>
+          <?php endif; ?>
+        </tr>
+      <?php endforeach; ?>
+      </tbody>
+    </table>
+  </div>
+</div>
+<?php endif; ?>
+
 <div class="par">
   <div class="bloque">
     <header>
@@ -451,7 +513,7 @@ if (GESTION_AVANZADA && puede('gestionar_raciones')) {
       <h2>Últimas entregas</h2>
       <div class="sub">Las 40 más recientes, a corral o a un animal</div>
     </div>
-    <a class="boton suave" href="<?= h(url_con('/exportar', ['tipo' => 'entregas'])) ?>">Planilla</a>
+    <a class="boton suave" href="<?= h(url_con('/exportar', ['tipo' => 'entregas'])) ?>">Filtrar y exportar</a>
     <a class="boton suave" href="<?= h(url_con('/exportar', ['tipo' => 'entregas', 'formato' => 'pdf'])) ?>">PDF</a>
   </header>
   <div class="tabla-scroll">

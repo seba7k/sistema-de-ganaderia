@@ -597,7 +597,7 @@ if (puede('registrar_secado')) {
       <h2>Últimos partos</h2>
       <div class="sub">Se registran también los que salieron mal: son la base de la alerta de descarte</div>
     </div>
-    <a class="boton suave" href="<?= h(url_con('/exportar', ['tipo' => 'partos'])) ?>">Planilla</a>
+    <a class="boton suave" href="<?= h(url_con('/exportar', ['tipo' => 'partos'])) ?>">Filtrar y exportar</a>
     <a class="boton suave" href="<?= h(url_con('/exportar', ['tipo' => 'partos', 'formato' => 'pdf'])) ?>">PDF</a>
   </header>
   <div class="tabla-scroll">

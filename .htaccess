@@ -41,7 +41,7 @@ AddType application/manifest+json .webmanifest
 <IfModule mod_headers.c>
     # La app de terreno se actualiza sola: el teléfono tiene que preguntar siempre
     # si hay versión nueva de estos archivos (su service worker guarda la copia offline).
-    <FilesMatch "^(sw\.js|app\.js|app\.css|index\.html|manifest\.webmanifest)$">
+    <FilesMatch "^(sw\.js|app\.js|lector\.js|app\.css|index\.html|manifest\.webmanifest)$">
         Header set Cache-Control "no-cache"
     </FilesMatch>
 

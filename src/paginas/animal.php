@@ -741,7 +741,7 @@ if (puede('editar_animal')) {
       <h2>Notas</h2>
       <div class="sub">Lo que le pasó al animal, escrito con las palabras del productor</div>
     </div>
-    <a class="boton suave" href="<?= h(url_con('/exportar', ['tipo' => 'notas'])) ?>">Planilla</a>
+    <a class="boton suave" href="<?= h(url_con('/exportar', ['tipo' => 'notas'])) ?>">Filtrar y exportar</a>
     <a class="boton suave" href="<?= h(url_con('/exportar', ['tipo' => 'notas', 'formato' => 'pdf'])) ?>">PDF</a>
   </header>
   <?php if (puede('registrar_nota')): ?>

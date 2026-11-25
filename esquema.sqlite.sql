@@ -396,3 +396,39 @@ CREATE TABLE IF NOT EXISTS migraciones (
   nombre      TEXT PRIMARY KEY,
   aplicada_en TEXT NOT NULL
 );
+
+-- v1.4: salida de animales del predio (venta, faena o traslado a otro predio).
+-- Cada salida es el respaldo del FMA: origen, destino, transporte y qué DIIO salieron.
+CREATE TABLE IF NOT EXISTS salidas (
+  id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+  organizacion_id    INTEGER NOT NULL REFERENCES organizaciones(id),
+  establecimiento_id INTEGER NOT NULL REFERENCES establecimientos(id),
+  tipo               TEXT NOT NULL,
+  fecha              TEXT NOT NULL,
+  destino_rup        TEXT NOT NULL,
+  destino_nombre     TEXT,
+  destino_comuna     TEXT,
+  destino_establecimiento_id INTEGER REFERENCES establecimientos(id),
+  comprador          TEXT,
+  transportista      TEXT,
+  transportista_rut  TEXT,
+  patente            TEXT,
+  cantidad_animales  INTEGER NOT NULL,
+  peso_total_kg      REAL,
+  precio_por_kg      REAL,
+  monto_neto         REAL,
+  observaciones      TEXT,
+  responsable_id     INTEGER REFERENCES usuarios(id),
+  creada_en          TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_salidas_fecha ON salidas(organizacion_id, fecha);
+
+CREATE TABLE IF NOT EXISTS detalles_salida (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  organizacion_id INTEGER NOT NULL REFERENCES organizaciones(id),
+  salida_id       INTEGER NOT NULL REFERENCES salidas(id),
+  animal_id       INTEGER NOT NULL REFERENCES animales(id),
+  diio            TEXT NOT NULL,
+  UNIQUE (salida_id, animal_id)
+);
+CREATE INDEX IF NOT EXISTS idx_detalle_salida_animal ON detalles_salida(animal_id);

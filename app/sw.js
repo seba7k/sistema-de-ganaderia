@@ -9,8 +9,8 @@
    los teléfonos descartan la copia vieja.
    ============================================================ */
 
-const VERSION = 'terreno-2.5.0';
-const ARCHIVOS = ['./', 'index.html', 'app.css', 'app.js', 'manifest.webmanifest', 'icono-192.png', 'icono-512.png'];
+const VERSION = 'terreno-2.6.0';
+const ARCHIVOS = ['./', 'index.html', 'app.css', 'app.js', 'lector.js', 'manifest.webmanifest', 'icono-192.png', 'icono-512.png'];
 
 self.addEventListener('install', (evento) => {
   evento.waitUntil(

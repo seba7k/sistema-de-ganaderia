@@ -115,7 +115,7 @@ echo ayuda_pantalla('¿Qué se guarda acá?', [
       <h2>Últimos movimientos</h2>
       <div class="sub">Los 200 más recientes</div>
     </div>
-    <a class="boton suave" href="<?= h(url_con('/exportar', ['tipo' => 'bitacora'])) ?>">Planilla</a>
+    <a class="boton suave" href="<?= h(url_con('/exportar', ['tipo' => 'bitacora'])) ?>">Filtrar y exportar</a>
     <a class="boton suave" href="<?= h(url_con('/exportar', ['tipo' => 'bitacora', 'formato' => 'pdf'])) ?>">PDF</a>
   </header>
   <div class="tabla-scroll">

@@ -8,6 +8,8 @@ require_once __DIR__ . '/dominio/retiros.php';
 require_once __DIR__ . '/dominio/reproduccion.php';
 require_once __DIR__ . '/dominio/mva.php';
 require_once __DIR__ . '/dominio/sag.php';
+require_once __DIR__ . '/dominio/raciones.php';
+require_once __DIR__ . '/salidas.php';
 
 /**
  * Operaciones de terreno.
@@ -209,6 +211,37 @@ function lote_predominante(int $org, int $corral_id): ?int
         [$org, $corral_id],
     );
     return $lote === null ? null : (int) $lote;
+}
+
+/**
+ * Aviso de stock mínimo después de un consumo: lista los insumos usados que
+ * quedaron en su mínimo o por debajo. Vacío si ninguno. Se agrega al mensaje de
+ * la entrega o del tratamiento, para que quien confirmó lo vea en el momento y
+ * no recién cuando abra el panel.
+ *
+ * @param list<int> $insumo_ids
+ */
+function aviso_stock_minimo(int $org, array $insumo_ids): string
+{
+    if ($insumo_ids === []) {
+        return '';
+    }
+    $ids = array_values(array_unique(array_map('intval', $insumo_ids)));
+    $bajos = filas(
+        'SELECT nombre, unidad, stock_actual, stock_minimo FROM insumos
+          WHERE organizacion_id = ? AND stock_minimo IS NOT NULL AND stock_actual <= stock_minimo
+            AND id IN (' . implode(',', array_fill(0, count($ids), '?')) . ') ORDER BY nombre',
+        array_merge([$org], $ids),
+    );
+    if ($bajos === []) {
+        return '';
+    }
+    return ' ⚠ Stock bajo: ' . implode('; ', array_map(
+        static fn (array $i): string => $i['nombre'] . ' quedan ' . numero((float) $i['stock_actual'], 1) . ' '
+            . (['KILOGRAMO' => 'kg', 'LITRO' => 'L', 'MILILITRO' => 'ml', 'DOSIS' => 'dosis', 'UNIDAD' => 'u'][$i['unidad']] ?? mb_strtolower((string) $i['unidad']))
+            . ' (mínimo ' . numero((float) $i['stock_minimo'], 1) . ')',
+        $bajos,
+    )) . '. Hay que reponer.';
 }
 
 /** Descuenta un consumo de bodega y lo deja asentado en el libro de stock. */
@@ -1133,8 +1166,9 @@ function op_tratamiento(int $org, int $usuario_id, array $d): array
         'id' => $id,
         'mensaje' => 'Tratamiento con ' . $insumo['nombre'] . ' en ' . $quien . '. '
             . ((int) $insumo['dias_carencia_carne'] > 0
-                ? 'Bloqueado para faena hasta el ' . fecha_corta($habilitacion) . '.'
-                : 'Sin carencia: puede ir a faena.'),
+                ? 'Bloqueado para venta, faena y salida del predio hasta el ' . fecha_corta($habilitacion) . '.'
+                : 'Sin carencia: puede ir a faena.')
+            . aviso_stock_minimo($org, [(int) $insumo['id']]),
     ];
 }
 
@@ -1613,6 +1647,16 @@ function op_entrega(int $org, int $usuario_id, array $d): array
         ? ($animal['lote_actual_id'] !== null ? (int) $animal['lote_actual_id'] : null)
         : lote_predominante($org, (int) $corral['id']);
 
+    /* Sin kilos planificados a mano, el plan es el calculado: lo que el corral
+       (o el animal) necesita según peso, categoría y ganancia diaria. Así la
+       pantalla de cumplimiento compara contra la necesidad real y no contra lo
+       mismo que se entregó. */
+    $plan_calculado = null;
+    if ($kg_planificados === null) {
+        $plan_calculado = kg_planificados_calculados($org, $corral, $animal, $racion);
+        $kg_planificados = $plan_calculado;
+    }
+
     $id = en_transaccion(static function () use ($org, $usuario_id, $corral, $animal, $lote_id, $racion, $fecha, $numero_entrega, $kg_planificados, $kg, $kg_ms, $costo, $ingredientes): int {
         consultar(
             'INSERT INTO entregas_alimento (organizacion_id, corral_id, animal_id, lote_id, racion_id, fecha,
@@ -1645,6 +1689,14 @@ function op_entrega(int $org, int $usuario_id, array $d): array
             $ingredientes,
         )) . '.';
     }
+    if ($plan_calculado !== null) {
+        $diferencia = $kg - $plan_calculado;
+        $mensaje .= ' Plan calculado: ' . numero($plan_calculado) . ' kg'
+            . (abs($diferencia) >= max(1.0, $plan_calculado * 0.05)
+                ? ' (' . ($diferencia > 0 ? '+' : '−') . numero(abs($diferencia)) . ' kg).'
+                : ', entrega al día.');
+    }
+    $mensaje .= aviso_stock_minimo($org, array_map(static fn (array $i): int => (int) $i['id'], $ingredientes));
 
     return ['id' => $id, 'mensaje' => $mensaje];
 }
@@ -1852,21 +1904,41 @@ function op_baja(int $org, int $usuario_id, array $d): array
  *
  * @return array<int, array{estado: string, fecha_habilitacion: string, dias_restantes: int, apto: bool, producto: string}>
  */
-function carencias_activas(int $org, ?int $predio = null): array
+function carencias_activas(int $org, ?int $predio = null, ?string $fecha = null, ?array $animal_ids = null): array
 {
+    /* $fecha: el día en que el animal saldría (por defecto, hoy). Una venta
+       fechada antes de que venza el retiro tiene que verse bloqueada aunque
+       hoy ya se haya cumplido, y al revés. $animal_ids acota la consulta. */
+    if ($animal_ids === []) {
+        return [];
+    }
     $retiros = [];
-    $del_predio = $predio === null ? '' : ' AND a.establecimiento_id = ' . $predio;
+    $parametros = [$org, (new DateTimeImmutable($fecha ?? hoy()))->modify('-400 days')->format('Y-m-d')];
+    $filtro = '';
+    if ($predio !== null) {
+        $filtro .= ' AND a.establecimiento_id = ?';
+        $parametros[] = $predio;
+    }
+    if ($animal_ids !== null) {
+        $ids = array_values(array_map('intval', $animal_ids));
+        $filtro .= ' AND ap.animal_id IN (' . implode(',', array_fill(0, count($ids), '?')) . ')';
+        array_push($parametros, ...$ids);
+    }
     foreach (filas(
         'SELECT ap.animal_id, t.fecha, t.dias_carencia_carne, i.nombre AS producto
            FROM aplicaciones_tratamiento ap
            JOIN tratamientos t ON t.id = ap.tratamiento_id
            JOIN insumos i ON i.id = t.insumo_id
            JOIN animales a ON a.id = ap.animal_id
-          WHERE ap.organizacion_id = ? AND t.fecha >= ? AND t.anulada = 0' . $del_predio,
+          WHERE ap.organizacion_id = ? AND t.fecha >= ? AND t.anulada = 0' . $filtro,
         // Ningún producto tiene más de un año de carencia: lo anterior ya venció.
-        [$org, hace_dias(400)],
+        $parametros,
     ) as $aplicacion) {
-        $estado = estado_retiro($aplicacion['fecha'], (int) $aplicacion['dias_carencia_carne']);
+        // Un tratamiento fechado después de la salida no la afecta.
+        if ($fecha !== null && substr((string) $aplicacion['fecha'], 0, 10) > $fecha) {
+            continue;
+        }
+        $estado = estado_retiro($aplicacion['fecha'], (int) $aplicacion['dias_carencia_carne'], $fecha);
         if ($estado['apto']) {
             continue;
         }

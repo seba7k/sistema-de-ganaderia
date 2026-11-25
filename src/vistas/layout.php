@@ -21,6 +21,7 @@ function icono(string $nombre): string
         'alimentacion' => '<path d="M12 22V10"/><path d="M12 10c0-3 2-5.5 5-6.5 0 3-2 5.5-5 6.5z"/><path d="M12 10C12 7 10 4.5 7 3.5c0 3 2 5.5 5 6.5z"/><path d="M12 16c0-3 2-5.5 5-6.5 0 3-2 5.5-5 6.5z"/><path d="M12 16c0-3-2-5.5-5-6.5 0 3 2 5.5 5 6.5z"/>',
         'sanidad'      => '<path d="m18 2 4 4"/><path d="m17 7 3-3"/><path d="M19 9 8.7 19.3a2.4 2.4 0 0 1-3.4 0l-.6-.6a2.4 2.4 0 0 1 0-3.4L15 5"/><path d="m9 11 4 4"/><path d="m5 19-3 3"/><path d="m14 4 6 6"/>',
         'reproduccion' => '<path d="M19.5 12.6 12 20l-7.5-7.4A5 5 0 1 1 12 6.1a5 5 0 1 1 7.5 6.5z"/>',
+        'salidas'      => '<path d="M3 12h13"/><path d="m12 7 5 5-5 5"/><path d="M20 4v16"/>',
         'lotes'        => '<path d="M3 3v18h18"/><path d="M8 16v-5"/><path d="M13 16V8"/><path d="M18 16V5"/>',
         'insumos'      => '<path d="M21 8 12 3 3 8v8l9 5 9-5z"/><path d="m3 8 9 5 9-5"/><path d="M12 13v8"/>',
         'usuarios'     => '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.9"/><path d="M16 3.1a4 4 0 0 1 0 7.8"/>',
@@ -95,6 +96,11 @@ function modulos(): array
             ],
         ],
         'Gestión' => [
+            [
+                'ruta' => '/salidas', 'icono' => icono('salidas'), 'color' => '#9a3412', 'nombre' => 'Salidas y FMA',
+                'detalle' => 'Venta, faena o traslado con bloqueo sanitario y borrador del FMA',
+                'permiso' => 'registrar_venta', 'rapido' => false,
+            ],
             [
                 'ruta' => '/lotes', 'icono' => icono('lotes'), 'color' => '#b4531a', 'nombre' => 'Lotes y cierres',
                 'detalle' => 'Ventas y resultado económico por lote',
@@ -208,6 +214,7 @@ function abrir_pagina(
 <?= enlaces_tipografia() ?>
 <link rel="stylesheet" href="<?= h(recurso('estilos.css')) ?>">
 <script src="<?= h(recurso('app.js')) ?>" defer></script>
+<script src="<?= h(recurso('app/lector.js')) ?>" defer></script>
 </head>
 <body data-csrf="<?= h(token_csrf()) ?>" data-inactividad="<?= MINUTOS_INACTIVIDAD ?>" data-salir="<?= h(url_con('/salir', ['inactividad' => '1'])) ?>" data-mantener="<?= h(url('/mantener-sesion')) ?>">
 

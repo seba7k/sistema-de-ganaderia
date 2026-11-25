@@ -48,7 +48,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     /* Bloqueo de faena: un animal con un medicamento en período de carencia no
        puede venderse ni ir al matadero, porque el residuo llega a la carne. Esos
        animales ni siquiera se ofrecen: la venta toma solo los aptos. */
-    $carencias = carencias_activas($org, predio_actual());
+    // Se mira el retiro el día de la venta, no hoy: es ese día cuando sale la carne.
+    $carencias = carencias_activas($org, predio_actual(), fecha_valida(entrada('fecha')) ? entrada('fecha') : null);
     $disponibles = array_values(array_filter(
         $en_lote,
         static fn (array $animal): bool => !isset($carencias[(int) $animal['id']]),

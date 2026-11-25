@@ -186,7 +186,7 @@ $ayuda = [
     'DIIO' => 'La caravana oficial del SAG, que se lee a distancia en el corral. Debajo, en gris, va el EID: el chip que levanta el lector en la manga. Los terneros sin DIIO se identifican con el número interno del predio.',
     'Peso' => 'El último pesaje registrado. Debajo, con cuánto entró el animal al establecimiento.',
     'Ganancia' => 'Kilos que gana por día (GDP). Se calcula entre el peso de ingreso y el último control. En feedlot, entre 1,0 y 1,5 kg/día es lo esperable. Un pesaje que baja o que supera ' . numero(GDP_MAXIMA_NORMAL, 1) . ' kg/día pide confirmación antes de guardarse.',
-    'Faena' => '«Apto» significa que puede salir. Si dice «Faltan N días», tiene un medicamento en período de carencia: el sistema no deja venderlo ni mandarlo a faena hasta que se cumpla.',
+    'Faena' => '«Apto» significa que puede salir. Si dice «Faltan N días», tiene un medicamento en período de carencia: el sistema no deja venderlo, faenarlo ni sacarlo del predio (en Salidas ni en la venta por lote) hasta que se cumpla.',
 ];
 
 // Sin gestión avanzada no hay carencia ni columna de faena que explicar.
@@ -356,7 +356,7 @@ if (puede('registrar_baja')) {
       <h2>Animales</h2>
       <div class="sub"><?= numero($total) ?> activo<?= $total === 1 ? '' : 's' ?><?= $total > 100 ? ' · se muestran los primeros 100' : '' ?> · tocá uno para ver su ficha</div>
     </div>
-    <a class="boton suave" href="<?= h(url_con('/exportar', ['tipo' => 'animales'])) ?>">Planilla</a>
+    <a class="boton suave" href="<?= h(url_con('/exportar', ['tipo' => 'animales'])) ?>">Filtrar y exportar</a>
     <a class="boton suave" href="<?= h(url_con('/exportar', ['tipo' => 'animales', 'formato' => 'pdf'])) ?>">PDF</a>
     <?php if ($corral_filtro !== ''): ?>
       <a class="boton suave" href="<?= h(url('/corrales')) ?>">Ver todos los corrales</a>

@@ -31,6 +31,7 @@ const TIPOS_OPERACION = [
     'TRASLADO'    => ['permiso' => 'registrar_traslado', 'funcion' => 'op_traslado'],
     'BAJA'        => ['permiso' => 'registrar_baja', 'funcion' => 'op_baja'],
     'VALIDACION'  => ['permiso' => 'validar_tratamiento', 'funcion' => 'op_validar_tratamiento'],
+    'SALIDA'      => ['permiso' => 'registrar_venta', 'funcion' => 'op_salida'],
 ];
 
 /** Operaciones que solo existen con la gestión avanzada: sin ella no hay sanidad con productos. */

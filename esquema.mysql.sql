@@ -549,3 +549,47 @@ CREATE TABLE IF NOT EXISTS migraciones (
   aplicada_en DATETIME NOT NULL,
   PRIMARY KEY (nombre)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- v1.4: salida de animales del predio (venta, faena o traslado a otro predio).
+-- Cada salida es el respaldo del FMA: origen, destino, transporte y qué DIIO salieron.
+CREATE TABLE IF NOT EXISTS salidas (
+  id                 INT NOT NULL AUTO_INCREMENT,
+  organizacion_id    INT NOT NULL,
+  establecimiento_id INT NOT NULL,
+  tipo               VARCHAR(20) NOT NULL,
+  fecha              DATE NOT NULL,
+  destino_rup        VARCHAR(20) NOT NULL,
+  destino_nombre     VARCHAR(150) NULL,
+  destino_comuna     VARCHAR(100) NULL,
+  destino_establecimiento_id INT NULL,
+  comprador          VARCHAR(150) NULL,
+  transportista      VARCHAR(150) NULL,
+  transportista_rut  VARCHAR(15) NULL,
+  patente            VARCHAR(10) NULL,
+  cantidad_animales  INT NOT NULL,
+  peso_total_kg      DECIMAL(10,1) NULL,
+  precio_por_kg      DECIMAL(10,2) NULL,
+  monto_neto         DECIMAL(14,0) NULL,
+  observaciones      VARCHAR(500) NULL,
+  responsable_id     INT NULL,
+  creada_en          DATETIME NOT NULL,
+  PRIMARY KEY (id),
+  KEY idx_salidas_fecha (organizacion_id, fecha),
+  CONSTRAINT fk_salida_org FOREIGN KEY (organizacion_id) REFERENCES organizaciones (id),
+  CONSTRAINT fk_salida_est FOREIGN KEY (establecimiento_id) REFERENCES establecimientos (id),
+  CONSTRAINT fk_salida_destino FOREIGN KEY (destino_establecimiento_id) REFERENCES establecimientos (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS detalles_salida (
+  id              INT NOT NULL AUTO_INCREMENT,
+  organizacion_id INT NOT NULL,
+  salida_id       INT NOT NULL,
+  animal_id       INT NOT NULL,
+  diio            VARCHAR(30) NOT NULL,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_detalle_salida (salida_id, animal_id),
+  KEY idx_detalle_salida_animal (animal_id),
+  CONSTRAINT fk_dsal_org FOREIGN KEY (organizacion_id) REFERENCES organizaciones (id),
+  CONSTRAINT fk_dsal_salida FOREIGN KEY (salida_id) REFERENCES salidas (id),
+  CONSTRAINT fk_dsal_animal FOREIGN KEY (animal_id) REFERENCES animales (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

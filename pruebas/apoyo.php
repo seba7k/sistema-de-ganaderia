@@ -125,3 +125,22 @@ function sincronizar_como(string $email, int $org, array $operacion): array
     $rol = (string) valor('SELECT rol FROM membresias WHERE organizacion_id = ? AND usuario_id = ?', [$org, id_usuario($email)]);
     return procesar_operacion($org, id_usuario($email), $rol, $operacion);
 }
+
+/** Lee un ZIP armado por zip_armar(): ruta => contenido. Para revisar los .xlsx. */
+function leer_zip(string $zip): array
+{
+    $archivos = [];
+    $pos = 0;
+    while (substr($zip, $pos, 4) === "PK\x03\x04") {
+        $c = unpack('vversion/vbanderas/vmetodo/vhora/vfecha/Vcrc/Vcomprimido/Voriginal/vlargo/vextra', substr($zip, $pos + 4, 26));
+        $nombre = substr($zip, $pos + 30, $c['largo']);
+        $datos = substr($zip, $pos + 30 + $c['largo'] + $c['extra'], $c['comprimido']);
+        $contenido = $c['metodo'] === 8 ? (string) gzinflate($datos) : $datos;
+        afirmar(crc32($contenido) === $c['crc'], 'CRC de ' . $nombre);
+        afirmar(strlen($contenido) === $c['original'], 'tamaño de ' . $nombre);
+        $archivos[$nombre] = $contenido;
+        $pos += 30 + $c['largo'] + $c['extra'] + $c['comprimido'];
+    }
+    afirmar(substr($zip, $pos, 4) === "PK\x01\x02", 'falta el directorio central');
+    return $archivos;
+}

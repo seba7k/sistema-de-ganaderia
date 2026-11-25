@@ -177,6 +177,12 @@ function migraciones(): array
         'diio-normalizado' => static fn (PDO $pdo) => normalizar_columna_cargada(
             $pdo, 'animales', 'caravana_visual', 'normalizar_diio', ['caravana_visual', 'numero_interno', 'eid'],
         ),
+        // v1.4: salidas del predio (venta, faena, traslado) con su respaldo de FMA.
+        'salidas' => static function (PDO $pdo): void {
+            foreach (sentencias_sql((string) file_get_contents(archivo_esquema())) as $sentencia) {
+                $pdo->exec($sentencia);
+            }
+        },
     ];
 }
 
