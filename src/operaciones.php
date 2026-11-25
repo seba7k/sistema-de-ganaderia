@@ -284,8 +284,8 @@ function op_anular(int $org, int $usuario_id, array $d): array
 
         match ($tipo) {
             'PESADA'      => recalcular_peso_animal($org, (int) $registro['animal_id']),
-            'ENTREGA'     => devolver_stock_entrega($org, $usuario_id, $registro),
-            'TRATAMIENTO' => devolver_stock_tratamiento($org, $usuario_id, $registro),
+            'ENTREGA'     => revertir_consumo_bodega($org, $usuario_id, 'CONSUMO_ALIMENTACION', $id, 'Entrega de alimento anulada'),
+            'TRATAMIENTO' => revertir_consumo_bodega($org, $usuario_id, 'CONSUMO_SANITARIO', $id, 'Tratamiento anulado'),
             'BAJA'        => revertir_baja($org, $registro),
             default       => null,
         };
@@ -314,34 +314,20 @@ function recalcular_peso_animal(int $org, int $animal_id): void
     );
 }
 
-/** Lo que salió de bodega por una entrega anulada vuelve a bodega. */
-function devolver_stock_entrega(int $org, int $usuario_id, array $entrega): void
+/** Revierte las cantidades y los costos asentados al registrar el consumo. */
+function revertir_consumo_bodega(int $org, int $usuario_id, string $tipo, int $referencia_id, string $observacion): void
 {
     foreach (filas(
-        'SELECT ir.porcentaje, i.id, i.costo_unitario FROM ingredientes_racion ir
-           JOIN insumos i ON i.id = ir.insumo_id
-          WHERE ir.organizacion_id = ? AND ir.racion_id = ?',
-        [$org, (int) $entrega['racion_id']],
-    ) as $ingrediente) {
+        'SELECT insumo_id, cantidad, costo_unitario FROM movimientos_stock
+          WHERE organizacion_id = ? AND tipo = ? AND referencia_id = ? AND cantidad < 0
+          ORDER BY insumo_id, id',
+        [$org, $tipo, $referencia_id],
+    ) as $movimiento) {
         devolver_a_bodega(
-            $org, $usuario_id, (int) $ingrediente['id'], (float) $ingrediente['costo_unitario'],
-            round((float) $entrega['kg_entregados'] * (float) $ingrediente['porcentaje'] / 100, 2),
-            (int) $entrega['id'], 'Entrega de alimento anulada',
+            $org, $usuario_id, (int) $movimiento['insumo_id'], (float) $movimiento['costo_unitario'],
+            -(float) $movimiento['cantidad'], $referencia_id, $observacion,
         );
     }
-}
-
-function devolver_stock_tratamiento(int $org, int $usuario_id, array $tratamiento): void
-{
-    $insumo = fila('SELECT id, costo_unitario FROM insumos WHERE organizacion_id = ? AND id = ?', [$org, (int) $tratamiento['insumo_id']]);
-    if ($insumo === null) {
-        return;
-    }
-    devolver_a_bodega(
-        $org, $usuario_id, (int) $insumo['id'], (float) $insumo['costo_unitario'],
-        (float) $tratamiento['dosis_por_animal'] * (int) $tratamiento['cantidad_animales'],
-        (int) $tratamiento['id'], 'Tratamiento anulado',
-    );
 }
 
 function devolver_a_bodega(int $org, int $usuario_id, int $insumo_id, float $costo, float $cantidad, int $referencia_id, string $observacion): void
