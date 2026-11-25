@@ -372,7 +372,7 @@ function cargar_datos_demo(PDO $pdo): void
               WHERE id = ?',
             [
                 $tratamiento['validado_por'], $tratamiento['validado_en'], $tratamiento['validado_mva_rut'],
-                $tratamiento['validado_mva_numero'], huella_tratamiento($tratamiento, $animales), (int) $tratamiento['id'],
+                $tratamiento['validado_mva_numero'], huella_tratamiento($tratamiento, $animales, clave_huella()), (int) $tratamiento['id'],
             ],
         );
     }

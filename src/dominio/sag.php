@@ -46,5 +46,7 @@ function normalizar_diio(string $diio): string
  */
 function diio_con_formato(string $diio, string $formato): bool
 {
-    return $formato === '' || preg_match($formato, $diio) === 1;
+    // Un formato mal escrito no valida nada y no ensucia la página con avisos:
+    // el arranque ya lo informa como problema de configuración.
+    return $formato === '' || @preg_match($formato, $diio) === 1;
 }

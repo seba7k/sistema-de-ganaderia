@@ -55,7 +55,7 @@
   /* Neutros */
   --tinta:        #1a241d;
   --tinta-2:      #4c5a51;
-  --tinta-3:      #7c887f;
+  --tinta-3:      #66726a;  /* 4,6:1 sobre --lienzo y 5:1 sobre blanco (WCAG AA) */
   --linea:        #e1e6df;
   --linea-2:      #eef1ec;
   --linea-fuerte: #cdd5ca;
@@ -1607,3 +1607,14 @@ td .boton.menudo:not(.peligro) {
   box-shadow: none;
 }
 td .boton.menudo:not(.peligro):hover { background: var(--lienzo); }
+
+/* Edición de un predio: fila propia a todo el ancho, debajo del predio. */
+.fila-edicion > td { background: var(--lienzo); border-top: 1px solid var(--linea); padding: 16px 20px; }
+.fila-edicion h3 { margin: 0 0 12px; font-size: 16px; }
+.fila-edicion .formulario { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 4px 16px; max-width: 760px; }
+.fila-edicion .formulario .acciones { grid-column: 1 / -1; }
+
+/* Registro MVA en Usuarios: tres campos con etiqueta, en grilla. */
+.formulario-mva .formulario { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 4px 12px; min-width: 300px; }
+.formulario-mva .formulario .acciones { grid-column: 1 / -1; }
+.fila-edicion .formulario .acciones, .formulario-mva .formulario .acciones { display: flex; gap: 10px; align-items: center; }

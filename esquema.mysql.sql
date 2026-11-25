@@ -302,7 +302,8 @@ CREATE TABLE IF NOT EXISTS tratamientos (
   CONSTRAINT fk_trat_corral FOREIGN KEY (corral_id) REFERENCES corrales (id),
   CONSTRAINT fk_trat_lote FOREIGN KEY (lote_id) REFERENCES lotes (id),
   CONSTRAINT fk_trat_insumo FOREIGN KEY (insumo_id) REFERENCES insumos (id),
-  CONSTRAINT fk_trat_responsable FOREIGN KEY (responsable_id) REFERENCES usuarios (id)
+  CONSTRAINT fk_trat_responsable FOREIGN KEY (responsable_id) REFERENCES usuarios (id),
+  CONSTRAINT fk_trat_validador FOREIGN KEY (validado_por) REFERENCES usuarios (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS aplicaciones_tratamiento (
@@ -539,4 +540,12 @@ CREATE TABLE IF NOT EXISTS intentos_ingreso (
   PRIMARY KEY (id),
   KEY idx_intentos (identidad, momento),
   KEY idx_intentos_origen (origen, momento)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Cambios de esquema y de datos ya aplicados a esta base. Evita repetir en cada
+-- visita una migración que ya corrió (ver migrar_base en src/db.php).
+CREATE TABLE IF NOT EXISTS migraciones (
+  nombre      VARCHAR(60) NOT NULL,
+  aplicada_en DATETIME NOT NULL,
+  PRIMARY KEY (nombre)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
