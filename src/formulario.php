@@ -272,8 +272,10 @@ function campo(
     array $opciones = [],
 ): string {
     $error = $errores[$nombre] ?? null;
-    $valor = valor_previo($nombre, $defecto);
-    $id = 'c_' . $nombre;
+    // 'valor' fija el valor mostrado (un formulario de edición con los datos
+    // guardados); 'id' evita repetir ids cuando hay varios formularios iguales.
+    $valor = array_key_exists('valor', $opciones) ? (string) $opciones['valor'] : valor_previo($nombre, $defecto);
+    $id = (string) ($opciones['id'] ?? 'c_' . $nombre);
 
     $html = '<div class="campo' . ($error !== null ? ' con-error' : '') . '">'
         . '<label for="' . h($id) . '">' . h($etiqueta)
@@ -329,12 +331,13 @@ function abrir_alta(string $titulo, string $descripcion = '', bool $abierto = fa
         . '</summary><div class="interior">';
 }
 
-function formulario(string $accion, string $contenido, string $texto_boton = 'Guardar'): string
+/** @param string $extra HTML de acciones secundarias junto al botón (ej. un enlace «Cancelar») */
+function formulario(string $accion, string $contenido, string $texto_boton = 'Guardar', string $extra = ''): string
 {
     return '<form method="post" action="' . h($accion) . '" class="formulario">'
         . '<input type="hidden" name="csrf" value="' . h(token_csrf()) . '">'
         . $contenido
-        . '<div class="acciones"><button class="boton" type="submit">' . h($texto_boton) . '</button></div>'
+        . '<div class="acciones"><button class="boton" type="submit">' . h($texto_boton) . '</button>' . $extra . '</div>'
         . '</form>';
 }
 

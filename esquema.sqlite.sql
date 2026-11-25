@@ -391,3 +391,8 @@ CREATE TABLE IF NOT EXISTS intentos_ingreso (
 );
 
 CREATE INDEX IF NOT EXISTS idx_intentos ON intentos_ingreso(identidad, momento);
+
+CREATE TABLE IF NOT EXISTS migraciones (
+  nombre      TEXT PRIMARY KEY,
+  aplicada_en TEXT NOT NULL
+);

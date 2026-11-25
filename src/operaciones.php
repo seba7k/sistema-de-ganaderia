@@ -92,6 +92,13 @@ function dato_si(array $d, string $campo): bool
     return is_scalar($valor) && in_array(mb_strtolower(trim((string) $valor)), ['1', 'true', 'si', 'sí', 'on'], true);
 }
 
+/** ¿Es una fecha real en formato AAAA-MM-DD? (rechaza el 31 de febrero) */
+function fecha_valida(string $valor): bool
+{
+    $fecha = DateTimeImmutable::createFromFormat('!Y-m-d', $valor);
+    return $fecha !== false && $fecha->format('Y-m-d') === $valor;
+}
+
 /** @param array<string, string> $errores */
 function validar_fecha(array $d, string $campo, string $etiqueta, array &$errores): ?string
 {
@@ -100,8 +107,7 @@ function validar_fecha(array $d, string $campo, string $etiqueta, array &$errore
         $errores[$campo] = $etiqueta . ' es obligatoria.';
         return null;
     }
-    $fecha = DateTimeImmutable::createFromFormat('!Y-m-d', $valor);
-    if ($fecha === false || $fecha->format('Y-m-d') !== $valor) {
+    if (!fecha_valida($valor)) {
         $errores[$campo] = $etiqueta . ' no es una fecha válida.';
         return null;
     }
@@ -246,7 +252,8 @@ function descontar_stock(int $org, int $usuario_id, array $insumo, float $cantid
 const ANULABLES = [
     'PESADA'      => ['tabla' => 'pesadas', 'nombre' => 'pesaje'],
     'ENTREGA'     => ['tabla' => 'entregas_alimento', 'nombre' => 'entrega de alimento'],
-    'TRATAMIENTO' => ['tabla' => 'tratamientos', 'nombre' => 'tratamiento'],
+    // Un tratamiento firmado por un MVA solo lo anula otro MVA vigente.
+    'TRATAMIENTO' => ['tabla' => 'tratamientos', 'nombre' => 'tratamiento', 'firma' => 'validado_en'],
     'BAJA'        => ['tabla' => 'mortalidades', 'nombre' => 'baja por muerte'],
     'NOTA'        => ['tabla' => 'notas_animal', 'nombre' => 'nota'],
 ];
@@ -281,21 +288,30 @@ function op_anular(int $org, int $usuario_id, array $d): array
     if ((int) $registro['anulada'] === 1) {
         throw new ErrorOperacion(['registro_id' => 'Ese registro ya estaba anulado.']);
     }
-    /* Un tratamiento con la firma de un MVA no lo deshace cualquiera: solo otro
-       registro MVA vigente puede responder por la anulación. */
-    if ($tipo === 'TRATAMIENTO' && ($registro['validado_en'] ?? null) !== null
-        && !mva_vigente(membresia_mva($org, $usuario_id), hoy())) {
-        throw new ErrorOperacion(['registro_id' => 'Este tratamiento está validado por un MVA: solo un MVA con registro vigente puede anularlo.']);
+    /* Registros con firma (ANULABLES[...]['firma']): uno firmado solo lo anula
+       un MVA vigente. Uno sin firma se anula con la condición de que siga sin
+       firma en el UPDATE: si lo validan justo entre la lectura y este momento,
+       ya no se encuentra y no se puede anular algo recién firmado. */
+    $firma = ANULABLES[$tipo]['firma'] ?? null;
+    $condicion = '';
+    if ($firma !== null) {
+        if ($registro[$firma] === null) {
+            $condicion = ' AND ' . $firma . ' IS NULL';
+        } elseif (!mva_vigente(membresia_mva($org, $usuario_id), hoy())) {
+            throw new ErrorOperacion(['registro_id' => 'Este ' . ANULABLES[$tipo]['nombre'] . ' está validado por un MVA: solo un MVA con registro vigente puede anularlo.']);
+        }
     }
 
-    en_transaccion(static function () use ($org, $usuario_id, $tipo, $tabla, $id, $motivo, $registro): void {
+    en_transaccion(static function () use ($org, $usuario_id, $tipo, $tabla, $id, $motivo, $registro, $condicion): void {
         $actualizada = consultar(
             'UPDATE ' . $tabla . ' SET anulada = 1, anulada_por = ?, anulada_en = ?, motivo_anulacion = ?
-              WHERE id = ? AND organizacion_id = ? AND anulada = 0',
+              WHERE id = ? AND organizacion_id = ? AND anulada = 0' . $condicion,
             [$usuario_id, ahora(), $motivo, $id, $org],
         );
         if ($actualizada->rowCount() !== 1) {
-            throw new ErrorOperacion(['registro_id' => 'Ese registro ya estaba anulado.']);
+            throw new ErrorOperacion(['registro_id' => $condicion !== ''
+                ? 'Ese registro ya estaba anulado, o lo acaban de validar: volvé a cargar la página.'
+                : 'Ese registro ya estaba anulado.']);
         }
 
         match ($tipo) {
@@ -396,8 +412,9 @@ function guardar_editar_animal(int $org, int $usuario_id, array $d): array
         throw new ErrorOperacion(['animal_id' => 'Ese animal no existe en esta organización.']);
     }
 
+    $caravana = normalizar_diio(dato_texto($d, 'caravana_visual'));
     $nuevo = [
-        'caravana_visual'  => normalizar_diio(dato_texto($d, 'caravana_visual')) !== '' ? normalizar_diio(dato_texto($d, 'caravana_visual')) : null,
+        'caravana_visual'  => $caravana !== '' ? $caravana : null,
         'numero_interno'   => dato_texto($d, 'numero_interno') !== '' ? dato_texto($d, 'numero_interno') : null,
         'eid'              => str_replace(' ', '', dato_texto($d, 'eid')) !== '' ? str_replace(' ', '', dato_texto($d, 'eid')) : null,
         'sexo'             => dato_texto($d, 'sexo'),
@@ -420,7 +437,8 @@ function guardar_editar_animal(int $org, int $usuario_id, array $d): array
     /* Solo se exige el formato si el DIIO cambia: un animal cargado antes de
        configurar el formato tiene que poder corregirse en otros datos sin que
        su caravana, que es la que tiene puesta, lo bloquee. */
-    if ($nuevo['caravana_visual'] !== null && $nuevo['caravana_visual'] !== $animal['caravana_visual']
+    if ($nuevo['caravana_visual'] !== null
+        && $nuevo['caravana_visual'] !== normalizar_diio((string) $animal['caravana_visual'])
         && !diio_con_formato($nuevo['caravana_visual'], FORMATO_DIIO)) {
         $errores['caravana_visual'] = mensaje_formato_diio();
     }
@@ -1144,23 +1162,57 @@ function membresia_mva(int $org, int $usuario_id): ?array
 /** Ids de los animales a los que se aplicó un tratamiento. */
 function animales_del_tratamiento(int $org, int $tratamiento_id): array
 {
-    return array_map('intval', array_column(filas(
-        'SELECT animal_id FROM aplicaciones_tratamiento WHERE organizacion_id = ? AND tratamiento_id = ?',
-        [$org, $tratamiento_id],
-    ), 'animal_id'));
+    return animales_por_tratamiento($org, [$tratamiento_id])[$tratamiento_id] ?? [];
 }
 
 /**
- * Estado de la validación de un tratamiento: PENDIENTE, VALIDADO o ALTERADO
- * (estaba validado, pero sus datos ya no coinciden con la huella).
+ * Animales de varios tratamientos en una sola consulta: id del tratamiento →
+ * ids de los animales. Una pantalla con cientos de tratamientos no puede hacer
+ * una consulta por fila para revisar las huellas.
+ *
+ * @param list<int> $ids
+ * @return array<int, list<int>>
  */
+function animales_por_tratamiento(int $org, array $ids): array
+{
+    if ($ids === []) {
+        return [];
+    }
+    $mapa = [];
+    foreach (filas(
+        'SELECT tratamiento_id, animal_id FROM aplicaciones_tratamiento
+          WHERE organizacion_id = ? AND tratamiento_id IN (' . implode(', ', array_fill(0, count($ids), '?')) . ')',
+        [$org, ...array_map('intval', $ids)],
+    ) as $aplicacion) {
+        $mapa[(int) $aplicacion['tratamiento_id']][] = (int) $aplicacion['animal_id'];
+    }
+    return $mapa;
+}
+
+/**
+ * Estado de la validación de cada tratamiento: PENDIENTE, VALIDADO o ALTERADO
+ * (estaba validado, pero sus datos ya no coinciden con la huella). Los animales
+ * de todos los validados se leen en una sola consulta.
+ *
+ * @param list<array<string, mixed>> $tratamientos filas de `tratamientos`
+ * @return array<int, string> id del tratamiento → estado
+ */
+function estados_validacion(int $org, array $tratamientos): array
+{
+    $validados = array_filter($tratamientos, static fn (array $t): bool => $t['validado_en'] !== null);
+    $animales = animales_por_tratamiento($org, array_map('intval', array_column($validados, 'id')));
+    $estados = [];
+    foreach ($tratamientos as $t) {
+        $id = (int) $t['id'];
+        $estados[$id] = $t['validado_en'] === null ? 'PENDIENTE'
+            : (hash_equals((string) $t['huella'], huella_tratamiento($t, $animales[$id] ?? [], clave_huella())) ? 'VALIDADO' : 'ALTERADO');
+    }
+    return $estados;
+}
+
 function estado_validacion(int $org, array $tratamiento): string
 {
-    if ($tratamiento['validado_en'] === null) {
-        return 'PENDIENTE';
-    }
-    $huella = huella_tratamiento($tratamiento, animales_del_tratamiento($org, (int) $tratamiento['id']));
-    return hash_equals((string) $tratamiento['huella'], $huella) ? 'VALIDADO' : 'ALTERADO';
+    return estados_validacion($org, [$tratamiento])[(int) $tratamiento['id']];
 }
 
 /**
@@ -1210,6 +1262,11 @@ function validaciones_app(int $org, int $usuario_id): array
             'vigente'       => mva_vigente($mva, hoy()),
         ],
         'por_validar' => $pendientes,
+        // La lista va cortada en 200: el total permite avisar que hay más.
+        'por_validar_total' => count($pendientes) < 200 ? count($pendientes) : (int) valor(
+            'SELECT COUNT(*) FROM tratamientos WHERE organizacion_id = ? AND anulada = 0 AND validado_en IS NULL',
+            [$org],
+        ),
     ];
 }
 
@@ -1243,7 +1300,7 @@ function op_validar_tratamiento(int $org, int $usuario_id, array $d): array
     $validado['validado_en'] = ahora();
     $validado['validado_mva_rut'] = $mva['mva_rut'];
     $validado['validado_mva_numero'] = $mva['mva_numero'];
-    $huella = huella_tratamiento($validado, animales_del_tratamiento($org, $id));
+    $huella = huella_tratamiento($validado, animales_del_tratamiento($org, $id), clave_huella());
 
     en_transaccion(static function () use ($org, $usuario_id, $id, $validado, $huella, $mva): void {
         // La condición sobre validado_en evita que dos validaciones simultáneas
@@ -1270,6 +1327,188 @@ function op_validar_tratamiento(int $org, int $usuario_id, array $d): array
         'id' => $id,
         'mensaje' => 'Tratamiento validado por ' . $mva['nombre'] . ' ' . $mva['apellido']
             . ' (MVA N° ' . $mva['mva_numero'] . ').',
+    ];
+}
+
+/* ============================================================
+   Predios: alta y edición
+
+   El RUP identifica al predio ante el SAG: se guarda siempre con el mismo
+   formato y no puede repetirse entre los campos del propietario. Al editar,
+   el predio tiene que ser de esta organización: el id llega del formulario y
+   se puede cambiar a mano.
+   ============================================================ */
+
+const TIPOS_PREDIO = [
+    'CRIANZA'        => 'Crianza',
+    'LECHERIA'       => 'Lechería',
+    'CAMPO_PASTORIL' => 'Campo pastoril',
+    'FEEDLOT'        => 'Feedlot',
+    'MIXTO'          => 'Mixto',
+];
+
+/** Alta de un predio. Nunca edita, aunque los datos traigan un predio_id. */
+function op_crear_predio(int $org, int $usuario_id, array $d): array
+{
+    return guardar_predio($org, $usuario_id, $d, null);
+}
+
+/** Edición del predio `predio_id`, que tiene que ser de esta organización. */
+function op_editar_predio(int $org, int $usuario_id, array $d): array
+{
+    return guardar_predio($org, $usuario_id, $d, dato_entero($d, 'predio_id') ?? 0);
+}
+
+function guardar_predio(int $org, int $usuario_id, array $d, ?int $predio_id): array
+{
+    $anterior = null;
+    if ($predio_id !== null) {
+        $anterior = fila('SELECT * FROM establecimientos WHERE organizacion_id = ? AND id = ?', [$org, $predio_id]);
+        if ($anterior === null) {
+            throw new ErrorOperacion(['predio_id' => 'Ese predio no es de esta organización.']);
+        }
+    }
+
+    $datos = [
+        'nombre' => dato_texto($d, 'nombre'),
+        'tipo'   => dato_texto($d, 'tipo'),
+        'rup'    => null,
+        'comuna' => dato_texto($d, 'comuna') !== '' ? dato_texto($d, 'comuna') : null,
+        'region' => dato_texto($d, 'region') !== '' ? dato_texto($d, 'region') : null,
+    ];
+
+    $errores = [];
+    foreach (['nombre' => 150, 'comuna' => 80, 'region' => 80] as $campo => $maximo) {
+        if (mb_strlen((string) $datos[$campo]) > $maximo) {
+            $errores[$campo] = 'Puede tener hasta ' . $maximo . ' caracteres.';
+        }
+    }
+    if ($datos['nombre'] === '') {
+        $errores['nombre'] = 'Falta el nombre del predio.';
+    } elseif (!isset($errores['nombre']) && (int) valor(
+        'SELECT COUNT(*) FROM establecimientos WHERE organizacion_id = ? AND nombre = ? AND id <> ?',
+        [$org, $datos['nombre'], $predio_id ?? 0],
+    ) > 0) {
+        $errores['nombre'] = 'Ya hay un predio con ese nombre.';
+    }
+    if (!isset(TIPOS_PREDIO[$datos['tipo']])) {
+        $errores['tipo'] = 'Ese tipo de predio no existe.';
+    }
+    if (dato_texto($d, 'rup') !== '') {
+        $datos['rup'] = normalizar_rup(dato_texto($d, 'rup'));
+        if ($datos['rup'] === null) {
+            $errores['rup'] = 'El RUP tiene 9 dígitos: región, provincia, comuna y número del predio (ej: 09.1.01.0001).';
+        } elseif ((int) valor(
+            'SELECT COUNT(*) FROM establecimientos WHERE organizacion_id = ? AND rup = ? AND id <> ?',
+            [$org, $datos['rup'], $predio_id ?? 0],
+        ) > 0) {
+            $errores['rup'] = 'Ese RUP ya está cargado en otro predio.';
+        }
+    }
+    if ($errores !== []) {
+        throw new ErrorOperacion($errores);
+    }
+
+    if ($anterior === null) {
+        consultar(
+            'INSERT INTO establecimientos (organizacion_id, nombre, tipo, rup, comuna, region) VALUES (?, ?, ?, ?, ?, ?)',
+            [$org, ...array_values($datos)],
+        );
+        return [
+            'id' => ultimo_id(),
+            'mensaje' => 'Predio «' . $datos['nombre'] . '» creado. Elegilo arriba para empezar a cargarle animales.',
+        ];
+    }
+
+    $cambios = [];
+    foreach (['nombre' => 'nombre', 'tipo' => 'tipo', 'rup' => 'RUP', 'comuna' => 'comuna', 'region' => 'región'] as $columna => $rotulo) {
+        if ((string) $anterior[$columna] !== (string) $datos[$columna]) {
+            $cambios[] = $rotulo . ': ' . ($anterior[$columna] ?? '—') . ' → ' . ($datos[$columna] ?? '—');
+        }
+    }
+    if ($cambios === []) {
+        throw new ErrorOperacion(['nombre' => 'No cambiaste ningún dato de «' . $anterior['nombre'] . '».']);
+    }
+
+    en_transaccion(static function () use ($org, $usuario_id, $predio_id, $datos, $cambios): void {
+        consultar(
+            'UPDATE establecimientos SET nombre = ?, tipo = ?, rup = ?, comuna = ?, region = ? WHERE id = ? AND organizacion_id = ?',
+            [...array_values($datos), $predio_id, $org],
+        );
+        // Cambiar el RUP de un predio con animales es delicado: queda en la bitácora.
+        registrar_bitacora($org, $usuario_id, 'EDITA_PREDIO', 'establecimientos', $predio_id, implode(' · ', $cambios));
+    });
+
+    return ['id' => $predio_id, 'mensaje' => 'Predio «' . $datos['nombre'] . '» actualizado.'];
+}
+
+/* ============================================================
+   Registro MVA de una persona (lo carga el administrador)
+
+   Va en la membresía: lo declara el administrador de cada organización.
+   Nadie se lo carga a sí mismo: quien valida tratamientos no puede ser
+   también quien se dio la autorización. Los tres campos vacíos lo quitan; las
+   validaciones ya hechas no cambian, porque guardaron su propia copia.
+   ============================================================ */
+
+function op_guardar_mva(int $org, int $usuario_id, array $d): array
+{
+    $persona_id = dato_entero($d, 'usuario_id') ?? 0;
+    $miembro = fila(
+        'SELECT u.nombre, u.apellido, m.mva_numero FROM membresias m JOIN usuarios u ON u.id = m.usuario_id
+          WHERE m.organizacion_id = ? AND m.usuario_id = ?',
+        [$org, $persona_id],
+    );
+    if ($miembro === null) {
+        throw new ErrorOperacion(['usuario_id' => 'Esa persona no trabaja en esta organización.']);
+    }
+    if ($persona_id === $usuario_id) {
+        throw new ErrorOperacion(['usuario_id' => 'No podés cargar tu propio registro MVA: pedíselo a otro administrador.']);
+    }
+    $nombre = $miembro['nombre'] . ' ' . $miembro['apellido'];
+
+    $rut = null;
+    $numero = null;
+    $vigencia = null;
+    $quitar = dato_texto($d, 'mva_rut') === '' && dato_texto($d, 'mva_numero') === '' && dato_texto($d, 'mva_vigente_hasta') === '';
+    if ($quitar && $miembro['mva_numero'] === null) {
+        throw new ErrorOperacion(['usuario_id' => $nombre . ' no tenía registro MVA cargado.']);
+    }
+    if (!$quitar) {
+        $errores = [];
+        $rut = normalizar_rut(dato_texto($d, 'mva_rut'));
+        if ($rut === null) {
+            $errores['mva_rut'] = 'El RUT no es válido: revisá el dígito verificador.';
+        }
+        $numero = dato_texto($d, 'mva_numero');
+        if ($numero === '' || mb_strlen($numero) > 30) {
+            $errores['mva_numero'] = 'Escribí el número de registro MVA (hasta 30 caracteres).';
+        }
+        $vigencia = dato_texto($d, 'mva_vigente_hasta');
+        if (!fecha_valida($vigencia)) {
+            $errores['mva_vigente_hasta'] = 'Indicá hasta qué fecha está vigente el registro.';
+        }
+        if ($errores !== []) {
+            throw new ErrorOperacion($errores);
+        }
+    }
+
+    en_transaccion(static function () use ($org, $usuario_id, $persona_id, $rut, $numero, $vigencia, $nombre, $quitar): void {
+        consultar(
+            'UPDATE membresias SET mva_rut = ?, mva_numero = ?, mva_vigente_hasta = ? WHERE organizacion_id = ? AND usuario_id = ?',
+            [$rut, $numero, $vigencia, $org, $persona_id],
+        );
+        registrar_bitacora(
+            $org, $usuario_id, $quitar ? 'QUITA_MVA' : 'ACTUALIZA_MVA', 'membresias', $persona_id,
+            $quitar ? $nombre : $nombre . ': MVA N° ' . $numero . ' · RUT ' . rut_legible($rut) . ' · vigente hasta ' . fecha_corta($vigencia),
+        );
+    });
+
+    return [
+        'id' => $persona_id,
+        'mensaje' => $quitar
+            ? $nombre . ' ya no tiene registro MVA: no va a poder validar tratamientos.'
+            : 'Registro MVA de ' . $nombre . ' guardado, vigente hasta el ' . fecha_corta($vigencia) . '.',
     ];
 }
 

@@ -41,8 +41,9 @@ donde lo extraigas.
 
 > Si ya había una versión anterior en la carpeta, extraer encima reemplaza los
 > archivos. Revisá después que `config.php` tenga tus datos (paso 4): el zip trae
-> uno en blanco. La carpeta `datos/` solo la usa la versión SQLite (desarrollo):
-> con MySQL queda vacía y no molesta.
+> uno en blanco. Con MySQL, la carpeta `datos/` guarda solo
+> `clave-huella.php`, la clave de las validaciones MVA (paso 4): no la borres al
+> actualizar. La versión SQLite (desarrollo) guarda ahí también la base.
 
 El Administrador de archivos oculta los archivos que empiezan con punto, así
 que puede que no veas el `.htaccess`: está ahí. Para verlo, **Configuración** →
@@ -65,6 +66,19 @@ sistema en el ciclo productivo: nacimientos, encastes, partos, secados, pesajes,
 bajas, corrales, alimentación por lote y notas escritas a mano. Si el campo
 necesita además sanidad con carencia, bodega de insumos y cierre económico por
 lote, ponerlo en `true` y esas tres pantallas aparecen en el menú.
+
+Con la gestión avanzada encendida, cada tratamiento lo valida un **Médico
+Veterinario Autorizado** (MVA). Dos claves de `config.php` tienen que ver con eso
+y con la identificación oficial:
+
+- `clave_huella`: la clave con la que se firman las validaciones MVA. Se puede
+  dejar vacía: la primera validación crea sola `datos/clave-huella.php`. Esa
+  clave **va en los respaldos junto con la base**: si se pierde o se cambia,
+  todos los tratamientos ya validados se ven como «Alterado».
+- `formato_diio`: el formato del DIIO de las caravanas oficiales, como expresión
+  regular entre barras (por ejemplo `'/^\d{9}$/'`). Viene vacío, y así se acepta
+  cualquier DIIO. Activalo recién después de compararlo con caravanas reales: un
+  formato equivocado deja animales sin poder cargarse.
 
 ## 5. Abrir
 
@@ -144,6 +158,8 @@ Los teléfonos que ya tenían la app instalada guardan datos viejos: en la app,
 | La app dice «La sesión venció» | El token dura 30 días (`dias_sesion_app` en `config.php`). Volver a ingresar: lo pendiente no se pierde. |
 | Un registro de la app aparece «rechazado» | Se abre en **Envíos** con el motivo (por ejemplo, un peso que bajó y hay que confirmar, o falta stock en bodega). Se puede confirmar, reintentar o descartar. |
 | Cambié `config.php` y no se nota | PHP guarda los archivos en caché unos segundos (en algunos hostings, hasta un minuto). Esperar y recargar. |
+| Todos los tratamientos validados aparecen como «Alterado» | Se perdió o se cambió la clave de las huellas: `clave_huella` en `config.php` o `datos/clave-huella.php`. Reponela desde el respaldo. |
+| «El formato_diio de config.php…» al abrir | La expresión regular está mal escrita o no va entre barras. Corregila o dejala vacía (paso 4). |
 | «Algo salió mal» | El detalle queda en **Errors** de cPanel. Para verlo en pantalla mientras se diagnostica: `'mostrar_errores' => true` en `config.php`, y volverlo a `false` después. |
 
 ## Importante: esto es una demostración pública
@@ -159,3 +175,7 @@ Para usarlo con datos reales:
 2. En `config.php`, poner `'demo' => false`.
 3. Abrir el sitio: aparece **Primera configuración**, que crea el campo y la
    cuenta de administrador. Desde **Usuarios** se da acceso al resto del equipo.
+4. Con la gestión avanzada, cargar en **Usuarios → Registro MVA** el RUT, el
+   número y la vigencia de cada veterinario. Lo carga otro administrador, nunca
+   la misma persona. Sin ese registro, nadie puede validar tratamientos.
+5. Incluir `datos/clave-huella.php` en los respaldos, junto con la base.

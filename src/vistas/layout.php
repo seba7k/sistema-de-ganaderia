@@ -5,7 +5,7 @@ require_once __DIR__ . '/../auth.php';
 require_once __DIR__ . '/../formato.php';
 require_once __DIR__ . '/../formulario.php';
 
-const VERSION_APP = '3.0';
+const VERSION_APP = '3.1';
 
 /**
  * Íconos de trazo. Reemplazan a los emojis, que cambian de dibujo y de tamaño

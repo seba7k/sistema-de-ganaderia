@@ -60,6 +60,16 @@ return [
      */
     'formato_diio' => '',
 
+    /*
+     * Clave de las validaciones MVA.
+     *
+     * Cada tratamiento validado por un Médico Veterinario Autorizado guarda una
+     * huella firmada con esta clave. Vacía: la primera validación crea sola
+     * datos/clave-huella.php. Respaldala junto con la base: si se pierde o se
+     * cambia, los tratamientos ya validados se ven como «Alterado».
+     */
+    'clave_huella' => '',
+
     // La plataforma web cierra la sesión tras este tiempo sin actividad.
     'minutos_inactividad' => 60,
 

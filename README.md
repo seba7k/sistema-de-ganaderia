@@ -82,6 +82,10 @@ php -S localhost:8000 index.php
 Web en <http://localhost:8000>, app en <http://localhost:8000/app/>. Cuentas con
 contraseña `demo1234`: `admin@`, `vet@`, `operario@` y `tractor@ganaderia.cl`.
 
+Al subir una versión nueva no hay que correr nada: en la primera visita la base
+se actualiza sola, y cada cambio queda anotado en la tabla `migraciones` para no
+repetirse (`migraciones()` en `src/db.php`).
+
 La base se configura en `config.php`. Para desarrollar sin servidor MySQL, un
 `config.local.php` (no se sube al hosting) puede cambiar el motor:
 
@@ -89,6 +93,19 @@ La base se configura en `config.php`. Para desarrollar sin servidor MySQL, un
 <?php
 return ['base_datos' => ['motor' => 'sqlite']];
 ```
+
+## Pruebas
+
+```
+php pruebas/correr.php                   # todas
+php pruebas/correr.php mva_prueba.php    # un archivo
+```
+
+Corre cada archivo `pruebas/*_prueba.php` en un proceso propio, con una base
+SQLite de demostración recién creada en la carpeta temporal: no usa `config.php`
+ni toca la base de la instalación. Los `*_formato_prueba.php` corren con un
+`formato_diio` de ejemplo. Termina con código 1 si algo falla. Solo funciona por
+consola, y el `.htaccess` bloquea la carpeta desde la web.
 
 ## Roles: permisos por función
 
@@ -120,17 +137,22 @@ edita desde **Predios**, y el cambio queda en la bitácora. El **DIIO** se guard
 sin espacios y en mayúsculas, y la búsqueda lo encuentra aunque se tipee con
 espacios. Su formato se puede exigir con `formato_diio` en `config.php` (una
 expresión regular, vacía por defecto): con formato configurado, la web rechaza
-un DIIO que no lo cumpla y la app de terreno da de alta como número interno lo
-que no tenga forma de DIIO. El EID del chip sigue exigiendo 15 dígitos.
+un DIIO que no lo cumpla, y la app de terreno pregunta si lo escrito es un
+número interno del campo antes de guardarlo así. Tiene que ir entre barras
+(`'/^\d{9}$/'`): la app no entiende otros delimitadores. El EID del chip sigue exigiendo 15 dígitos.
 
 **Médico Veterinario Autorizado (MVA).** Con la gestión avanzada encendida, cada
 tratamiento queda *pendiente* hasta que lo valida un veterinario con registro
 MVA vigente (RUT, número y fecha de vigencia). El administrador carga ese
 registro en **Usuarios**, por organización, y nunca el suyo propio. Al validar se
-copian el RUT y el número del MVA y se guarda una huella (SHA-256) de lo
-firmado: qué producto, a qué animales, dosis, fecha y carencia. Si alguien cambia
-esos datos directo en la base, **Sanidad** muestra el tratamiento como
-*Alterado*. Un tratamiento validado solo lo puede anular otro MVA vigente.
+copian el RUT y el número del MVA y se guarda una huella (HMAC-SHA256) de lo
+firmado: qué producto, a qué animales, dosis, fecha y carencia. La huella se
+calcula con una clave que vive en el servidor y no en la base (`clave_huella` en
+`config.php` o, si no está, `datos/clave-huella.php`, que se crea sola): si
+alguien cambia esos datos directo en la base, no puede rehacerla, y **Sanidad**
+muestra el tratamiento como *Alterado*. Esa clave va en los respaldos; ver
+[INSTALAR-CPANEL.md](INSTALAR-CPANEL.md#4-completar-configphp). El porqué de este
+diseño está en [docs/adr/0001-validacion-mva-interna.md](docs/adr/0001-validacion-mva-interna.md). Un tratamiento validado solo lo puede anular otro MVA vigente.
 También se valida desde la app de terreno (tarea «Validar tratamientos»), aun sin
 señal: la validación queda en la cola del teléfono y el servidor vuelve a revisar
 la vigencia del registro al recibirla. Esto

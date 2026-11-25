@@ -15,10 +15,12 @@ if (defined('RAIZ_APP')) {
 
 define('RAIZ_APP', dirname(__DIR__));
 
-$configuracion = require RAIZ_APP . '/config.php';
+// Las pruebas automáticas (pruebas/correr.php) traen su propia configuración:
+// así no dependen de config.php ni tocan la base de la instalación.
+$configuracion = defined('CONFIG_FORZADA') ? CONFIG_FORZADA : require RAIZ_APP . '/config.php';
 
 // Configuración local de desarrollo: pisa solo las claves que define.
-if (is_file(RAIZ_APP . '/config.local.php')) {
+if (!defined('CONFIG_FORZADA') && is_file(RAIZ_APP . '/config.local.php')) {
     $configuracion = array_replace_recursive($configuracion, require RAIZ_APP . '/config.local.php');
 }
 
@@ -27,6 +29,7 @@ define('GESTION_AVANZADA', !empty($configuracion['gestion_avanzada']));
 define('URL_AMIGABLES', !isset($configuracion['url_amigables']) || $configuracion['url_amigables']);
 define('MINUTOS_INACTIVIDAD', (int) (isset($configuracion['minutos_inactividad']) ? $configuracion['minutos_inactividad'] : 60));
 define('FORMATO_DIIO', isset($configuracion['formato_diio']) && is_string($configuracion['formato_diio']) ? trim($configuracion['formato_diio']) : '');
+define('CLAVE_HUELLA_CONFIG', isset($configuracion['clave_huella']) && is_string($configuracion['clave_huella']) ? $configuracion['clave_huella'] : '');
 define('DIAS_SESION_APP', (int) (isset($configuracion['dias_sesion_app']) ? $configuracion['dias_sesion_app'] : 30));
 
 define('CONFIG_BD', array_merge(
@@ -95,6 +98,26 @@ function es_https()
         && strtolower((string) $_SERVER['HTTP_X_FORWARDED_PROTO']) === 'https';
 }
 
+/**
+ * Qué tiene de malo el formato_diio de config.php, o null si se puede usar.
+ * La app de terreno también lo usa, y solo entiende la forma /patrón/banderas.
+ */
+function problema_formato_diio($formato)
+{
+    if ($formato === '') {
+        return null;
+    }
+    if (@preg_match($formato, '') === false) {
+        return 'El «formato_diio» de config.php no es una expresión regular válida. '
+            . 'Corregilo, o dejalo vacío para no revisar el formato del DIIO.';
+    }
+    if (preg_match('#^/.*/[imsu]*$#s', $formato) !== 1) {
+        return 'El «formato_diio» de config.php tiene que ir entre barras, como \'/^\\d{9}$/\': '
+            . 'la app de terreno no entiende otros delimitadores ni banderas.';
+    }
+    return null;
+}
+
 /** Lo que le falta al servidor para poder correr el sistema. Vacío = todo bien. */
 function requisitos_pendientes()
 {
@@ -109,9 +132,9 @@ function requisitos_pendientes()
         $pendientes[] = 'Falta la extensión mbstring. En cPanel: «Select PHP Version» → pestaña Extensions → marcar mbstring.';
     }
 
-    if (FORMATO_DIIO !== '' && @preg_match(FORMATO_DIIO, '') === false) {
-        $pendientes[] = 'El «formato_diio» de config.php no es una expresión regular válida. '
-            . 'Corregilo, o dejalo vacío para no revisar el formato del DIIO.';
+    $problema_diio = problema_formato_diio(FORMATO_DIIO);
+    if ($problema_diio !== null) {
+        $pendientes[] = $problema_diio;
     }
 
     if ($bd['motor'] === 'sqlite') {

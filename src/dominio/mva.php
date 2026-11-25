@@ -68,25 +68,36 @@ function mva_vigente(?array $membresia, string $dia): bool
 }
 
 /**
- * Huella de un tratamiento validado: SHA-256 de todo lo que el MVA firmó.
+ * Huella de un tratamiento validado: HMAC-SHA256 de todo lo que el MVA firmó,
+ * con una clave que vive en el servidor y no en la base.
  *
- * Incluye qué se aplicó, a quiénes, cuándo, la carencia y los datos de la propia
- * validación. Si después alguien cambia cualquiera de esos datos directo en la
- * base, la huella deja de coincidir y la pantalla lo muestra.
- *
- * Los números se escriben siempre con el mismo formato porque MySQL y SQLite no
- * devuelven igual un decimal (2 contra 2.0), y la huella tiene que dar lo mismo
- * en los dos motores.
+ * Si alguien cambia esos datos directo en la base, la huella deja de coincidir
+ * y la pantalla lo muestra. Sin la clave tampoco puede recalcularla: un SHA-256
+ * común se podría rehacer con los mismos datos de la fila.
  *
  * @param array<string, mixed> $tratamiento fila de `tratamientos` con los datos de validación
  * @param list<int> $animales ids de los animales tratados
  */
-function huella_tratamiento(array $tratamiento, array $animales): string
+function huella_tratamiento(array $tratamiento, array $animales, string $clave): string
+{
+    return hash_hmac('sha256', contenido_huella($tratamiento, $animales), $clave);
+}
+
+/**
+ * Lo que cubre la huella, como texto: qué se aplicó, a quiénes, cuándo, la
+ * carencia y los datos de la propia validación.
+ *
+ * Los números se escriben siempre con el mismo formato porque MySQL y SQLite no
+ * devuelven igual un decimal (2 contra 2.0), y la huella tiene que dar lo mismo
+ * en los dos motores. Un texto con bytes inválidos se reemplaza en vez de
+ * romper la pantalla.
+ */
+function contenido_huella(array $tratamiento, array $animales): string
 {
     $entero = static fn (mixed $v): ?int => $v === null ? null : (int) $v;
     sort($animales);
 
-    $contenido = [
+    return json_encode([
         'id'                  => (int) $tratamiento['id'],
         'organizacion_id'     => (int) $tratamiento['organizacion_id'],
         'establecimiento_id'  => (int) $tratamiento['establecimiento_id'],
@@ -106,7 +117,5 @@ function huella_tratamiento(array $tratamiento, array $animales): string
         'validado_en'         => substr((string) $tratamiento['validado_en'], 0, 19),
         'validado_mva_rut'    => (string) $tratamiento['validado_mva_rut'],
         'validado_mva_numero' => (string) $tratamiento['validado_mva_numero'],
-    ];
-
-    return hash('sha256', json_encode($contenido, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR));
+    ], JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE | JSON_THROW_ON_ERROR);
 }

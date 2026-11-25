@@ -2,6 +2,8 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/arranque.php';
+// Para normalizar los RUP ya cargados al migrar.
+require_once __DIR__ . '/dominio/sag.php';
 
 /**
  * Conexión a la base y utilidades de consulta.
@@ -134,48 +136,153 @@ function inicializar_base(PDO $pdo): void
 }
 
 /**
- * Aplica los cambios de esquema posteriores a la primera versión.
+ * Cambios de esquema y de datos posteriores a la primera versión, en orden.
  *
  * Una base creada con una versión anterior no tiene las columnas ni las tablas
- * nuevas, y el sistema se sube encima de la que ya está funcionando. Cada cambio
- * se prueba con una consulta barata: si responde, ya estaba aplicado.
+ * nuevas, y el sistema se sube encima de la que ya está funcionando. Cada
+ * cambio se anota en la tabla `migraciones` al aplicarse: así cada visita hace
+ * una sola consulta para saber que no falta nada, y lo que transforma datos
+ * (como normalizar los RUP) corre una sola vez. Cada paso también se puede
+ * repetir sin daño, por si una migración se cortó a la mitad.
  *
- * Las tablas nuevas se crean volviendo a pasar el esquema, que es todo
- * CREATE TABLE IF NOT EXISTS y por eso no toca lo existente.
+ * @return array<string, callable(PDO): void>
  */
+function migraciones(): array
+{
+    $mysql = motor_bd() === 'mysql';
+    return [
+        // v1.0: fecha de secado y anulación de registros.
+        'fecha-secado' => static fn (PDO $pdo) => agregar_columna_si_falta($pdo, 'animales', 'fecha_secado', $mysql ? 'DATE NULL' : 'TEXT'),
+        'anulacion' => static function (PDO $pdo) use ($mysql): void {
+            $tipos = $mysql
+                ? ['anulada' => 'TINYINT(1) NOT NULL DEFAULT 0', 'anulada_por' => 'INT NULL', 'anulada_en' => 'DATETIME NULL', 'motivo_anulacion' => 'VARCHAR(255) NULL']
+                : ['anulada' => 'INTEGER NOT NULL DEFAULT 0', 'anulada_por' => 'INTEGER', 'anulada_en' => 'TEXT', 'motivo_anulacion' => 'TEXT'];
+            foreach (['pesadas', 'entregas_alimento', 'tratamientos', 'mortalidades', 'notas_animal'] as $tabla) {
+                foreach ($tipos as $columna => $tipo) {
+                    agregar_columna_si_falta($pdo, $tabla, $columna, $tipo);
+                }
+            }
+        },
+        // Tablas nuevas: el esquema es todo CREATE TABLE IF NOT EXISTS y no toca lo existente.
+        'tablas-nuevas' => static function (PDO $pdo): void {
+            foreach (sentencias_sql((string) file_get_contents(archivo_esquema())) as $sentencia) {
+                $pdo->exec($sentencia);
+            }
+        },
+        // v1.1: registro MVA, validación de tratamientos y RUP/DIIO normalizados.
+        'mva-columnas' => 'migrar_columnas_mva',
+        'rup-normalizado' => static fn (PDO $pdo) => normalizar_columna_cargada(
+            $pdo, 'establecimientos', 'rup', 'normalizar_rup', ['rup'],
+        ),
+        'diio-normalizado' => static fn (PDO $pdo) => normalizar_columna_cargada(
+            $pdo, 'animales', 'caravana_visual', 'normalizar_diio', ['caravana_visual', 'numero_interno', 'eid'],
+        ),
+    ];
+}
+
 function migrar_base(PDO $pdo): void
 {
+    $hechas = migraciones_hechas($pdo);
+    if (array_diff(array_keys(migraciones()), $hechas) === []) {
+        return;
+    }
+
+    /* Dos visitas a la vez sobre una base recién subida intentarían el mismo
+       ALTER: la segunda espera el candado y, al entrar, ve las marcas puestas. */
+    $liberar = tomar_candado($pdo);
     try {
-        $pdo->query('SELECT fecha_secado FROM animales LIMIT 1');
-    } catch (PDOException) {
-        $pdo->exec('ALTER TABLE animales ADD COLUMN fecha_secado ' . (motor_bd() === 'mysql' ? 'DATE NULL' : 'TEXT'));
-    }
-
-    /* Se prueba tabla por tabla y no una sola como centinela: si alguna quedó a
-       medias —por un esquema viejo o por una migración interrumpida— revisar solo
-       la primera dejaría las otras sin columnas y la aplicación fallaría recién al
-       consultarlas. */
-    $tipos = motor_bd() === 'mysql'
-        ? ['TINYINT(1) NOT NULL DEFAULT 0', 'INT NULL', 'DATETIME NULL', 'VARCHAR(255) NULL']
-        : ['INTEGER NOT NULL DEFAULT 0', 'INTEGER', 'TEXT', 'TEXT'];
-    foreach (['pesadas', 'entregas_alimento', 'tratamientos', 'mortalidades', 'notas_animal'] as $tabla) {
-        try {
-            $pdo->query('SELECT anulada FROM ' . $tabla . ' LIMIT 1');
-            continue;
-        } catch (PDOException) {
-            // Falta el bloque de anulación en esta tabla: se agrega abajo.
-        }
-        foreach (['anulada', 'anulada_por', 'anulada_en', 'motivo_anulacion'] as $i => $columna) {
-            try {
-                $pdo->exec('ALTER TABLE ' . $tabla . ' ADD COLUMN ' . $columna . ' ' . $tipos[$i]);
-            } catch (PDOException) {
-                // La columna ya estaba: seguimos con la siguiente.
+        $hechas = migraciones_hechas($pdo);
+        foreach (migraciones() as $nombre => $migrar) {
+            if (in_array($nombre, $hechas, true)) {
+                continue;
             }
+            $migrar($pdo);
+            $pdo->prepare('INSERT INTO migraciones (nombre, aplicada_en) VALUES (?, ?)')->execute([$nombre, ahora()]);
         }
+    } finally {
+        $liberar();
+    }
+}
+
+/** Nombres de las migraciones ya aplicadas. Crea la tabla si la base es anterior a ella. */
+function migraciones_hechas(PDO $pdo): array
+{
+    try {
+        return $pdo->query('SELECT nombre FROM migraciones')->fetchAll(PDO::FETCH_COLUMN);
+    } catch (PDOException) {
+        $pdo->exec(motor_bd() === 'mysql'
+            ? 'CREATE TABLE IF NOT EXISTS migraciones (nombre VARCHAR(60) NOT NULL, aplicada_en DATETIME NOT NULL, PRIMARY KEY (nombre))
+               ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci'
+            : 'CREATE TABLE IF NOT EXISTS migraciones (nombre TEXT PRIMARY KEY, aplicada_en TEXT NOT NULL)');
+        return [];
+    }
+}
+
+/**
+ * Clave con la que se firman las huellas de los tratamientos validados.
+ *
+ * Sale de `clave_huella` en config.php o, si no está, de datos/clave-huella.php,
+ * que se crea sola la primera vez. Tiene que vivir fuera de la base: quien solo
+ * puede escribir en la base no puede rehacer una huella sin ella. Si se pierde,
+ * los tratamientos ya validados se ven como «Alterado»: va en los respaldos.
+ */
+function clave_huella(): string
+{
+    static $clave = null;
+    if ($clave !== null) {
+        return $clave;
+    }
+    if (CLAVE_HUELLA_CONFIG !== '') {
+        return $clave = CLAVE_HUELLA_CONFIG;
     }
 
-    /* Médico Veterinario Autorizado (v1.1): su registro en la membresía y la
-       validación de los tratamientos. */
+    $archivo = RAIZ_APP . '/datos/clave-huella.php';
+    if (!is_file($archivo)) {
+        // Modo «x»: si dos visitas llegan juntas, solo una crea el archivo.
+        $nuevo = @fopen($archivo, 'x');
+        if ($nuevo !== false) {
+            fwrite($nuevo, "<?php\n// Clave de las huellas MVA. No la borres ni la cambies: respaldala.\nreturn '" . bin2hex(random_bytes(32)) . "';\n");
+            fclose($nuevo);
+        }
+    }
+    $leida = is_file($archivo) ? require $archivo : null;
+    if (!is_string($leida) || strlen($leida) < 32) {
+        throw new RuntimeException('No se pudo leer ni crear datos/clave-huella.php: revisá los permisos de la carpeta datos.');
+    }
+    return $clave = $leida;
+}
+
+/** ¿Ya se aplicó esta migración en la base? */
+function migracion_aplicada(PDO $pdo, string $nombre): bool
+{
+    $consulta = $pdo->prepare('SELECT 1 FROM migraciones WHERE nombre = ?');
+    $consulta->execute([$nombre]);
+    return $consulta->fetchColumn() !== false;
+}
+
+/**
+ * Agrega la columna si falta. Tolera que otra visita la haya agregado recién:
+ * lo que importa es que, al terminar, la columna exista.
+ */
+function agregar_columna_si_falta(PDO $pdo, string $tabla, string $columna, string $tipo): void
+{
+    try {
+        $pdo->query('SELECT ' . $columna . ' FROM ' . $tabla . ' LIMIT 1');
+        return;
+    } catch (PDOException) {
+        // Falta: se agrega abajo.
+    }
+    try {
+        $pdo->exec('ALTER TABLE ' . $tabla . ' ADD COLUMN ' . $columna . ' ' . $tipo);
+    } catch (PDOException $error) {
+        // Si la columna ya está, otra visita se adelantó; si no, el error es real.
+        $pdo->query('SELECT ' . $columna . ' FROM ' . $tabla . ' LIMIT 1');
+    }
+}
+
+/** v1.1: registro MVA en la membresía y validación de los tratamientos. */
+function migrar_columnas_mva(PDO $pdo): void
+{
     $mysql = motor_bd() === 'mysql';
     foreach ([
         'membresias' => [
@@ -192,21 +299,62 @@ function migrar_base(PDO $pdo): void
         ],
     ] as $tabla => $columnas) {
         foreach ($columnas as $columna => $tipo) {
-            try {
-                $pdo->query('SELECT ' . $columna . ' FROM ' . $tabla . ' LIMIT 1');
-            } catch (PDOException) {
-                $pdo->exec('ALTER TABLE ' . $tabla . ' ADD COLUMN ' . $columna . ' ' . $tipo);
-            }
+            agregar_columna_si_falta($pdo, $tabla, $columna, $tipo);
         }
     }
 
-    try {
-        $pdo->query('SELECT 1 FROM bitacora LIMIT 1');
-        $pdo->query('SELECT 1 FROM notas_animal LIMIT 1');
-    } catch (PDOException) {
-        foreach (sentencias_sql((string) file_get_contents(archivo_esquema())) as $sentencia) {
-            $pdo->exec($sentencia);
+    /* En MySQL, quién validó apunta a un usuario real. La columna es nueva y
+       está toda en NULL, así que la llave entra sin chocar con datos viejos.
+       SQLite no permite agregar llaves con ALTER: ahí solo la tiene una base
+       creada desde cero, y la regla la sigue cuidando la aplicación. */
+    if ($mysql) {
+        $existe = $pdo->query(
+            "SELECT 1 FROM information_schema.TABLE_CONSTRAINTS
+              WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'tratamientos'
+                AND CONSTRAINT_NAME = 'fk_trat_validador'"
+        )->fetchColumn();
+        if ($existe === false) {
+            $pdo->exec('ALTER TABLE tratamientos ADD CONSTRAINT fk_trat_validador FOREIGN KEY (validado_por) REFERENCES usuarios (id)');
         }
+    }
+}
+
+/**
+ * Normaliza una sola vez los valores ya cargados de una columna, como los RUP o
+ * los DIIO escritos antes de que se guardaran siempre igual.
+ *
+ * Lo que no se puede normalizar queda como está. Uno que al normalizarse
+ * chocaría con otro valor de la misma organización en cualquiera de las
+ * columnas `$ocupadas` (por ejemplo, un DIIO igual al número interno de otro
+ * animal) también se deja: es un caso para que alguien lo revise, no para que
+ * el sistema elija.
+ *
+ * @param callable(string): ?string $normalizar devuelve null o '' si no se puede
+ * @param list<string> $ocupadas columnas con las que no puede chocar
+ */
+function normalizar_columna_cargada(PDO $pdo, string $tabla, string $columna, callable $normalizar, array $ocupadas): void
+{
+    $filas = $pdo->query('SELECT id, organizacion_id, ' . implode(', ', array_unique([$columna, ...$ocupadas])) . ' FROM ' . $tabla . ' ORDER BY id')->fetchAll();
+    $tomados = [];
+    foreach ($filas as $fila) {
+        foreach ($ocupadas as $otra) {
+            if ($fila[$otra] !== null) {
+                $tomados[$fila['organizacion_id'] . '|' . $fila[$otra]] = true;
+            }
+        }
+    }
+    $actualizar = $pdo->prepare('UPDATE ' . $tabla . ' SET ' . $columna . ' = ? WHERE id = ?');
+    foreach ($filas as $fila) {
+        if ($fila[$columna] === null) {
+            continue;
+        }
+        $normal = $normalizar((string) $fila[$columna]) ?: null;
+        $clave = $fila['organizacion_id'] . '|' . $normal;
+        if ($normal === null || $normal === $fila[$columna] || isset($tomados[$clave])) {
+            continue;
+        }
+        $actualizar->execute([$normal, (int) $fila['id']]);
+        $tomados[$clave] = true;
     }
 }
 

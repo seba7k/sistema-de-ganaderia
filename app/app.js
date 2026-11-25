@@ -237,6 +237,10 @@
           if (resultado.estado === 'OK' || resultado.estado === 'DUPLICADA') {
             await BD.quitar(op.uuid);
             estado.cola = estado.cola.filter((o) => o.uuid !== op.uuid);
+            // Ya validado: sale de la lista aunque después falle la descarga del catálogo.
+            if (op.tipo === 'VALIDACION' && estado.catalogo?.por_validar) {
+              estado.catalogo.por_validar = estado.catalogo.por_validar.filter((t) => t.id !== op.datos.tratamiento_id);
+            }
             enviados += 1;
           } else {
             op.estado = resultado.estado === 'RECHAZADA' ? 'RECHAZADA' : 'ERROR';
@@ -677,10 +681,14 @@
             : 'No tenés un registro MVA cargado en esta organización. Lo carga el administrador en la web, en Usuarios.') + '</div>')
         + '<p class="nota">Los tratamientos cargados en el teléfono aparecen acá después de sincronizar. '
         + 'Las validaciones se guardan aunque no haya señal.</p>'
+        + ((estado.catalogo.por_validar_total || 0) > (estado.catalogo.por_validar || []).length
+          ? '<div class="alerta">Se muestran los ' + fmt(estado.catalogo.por_validar.length) + ' más recientes de '
+            + fmt(estado.catalogo.por_validar_total) + ' pendientes. Los más antiguos se validan en la web, en Sanidad.</div>'
+          : '')
         + (lista.length === 0
           ? '<p class="vacio">No hay tratamientos por validar. ✔</p>'
           : '<ul class="cola validar">' + lista.map((t) => '<li>'
-            + '<div class="tipo">' + esc(t.producto) + ' <span>' + fechaCorta(t.fecha) + '</span></div>'
+            + '<div class="tipo">' + esc(t.producto) + ' <span>' + esc(fechaCorta(t.fecha)) + '</span></div>'
             + '<div class="resumen">' + esc(t.donde || 'Sin corral') + ' · ' + fmt(t.cabezas) + ' cabeza(s) · '
             + fmt(t.dosis, 1) + ' ' + esc(UNIDADES[t.unidad] || '') + ' por animal</div>'
             + '<div class="estado">' + esc(etiqueta(TIPOS_TRATAMIENTO, t.tipo)) + ' · ' + esc(etiqueta(VIAS, t.via)) + ' · carencia ' + t.carencia + ' d'
@@ -1005,24 +1013,36 @@
       if (!categoria) return aviso('Marcá la categoría.', 'error');
       if (!(peso >= 10 && peso <= 1500)) return aviso('El peso va entre 10 y 1.500 kg.', 'error');
 
-      // Si el sistema tiene formato de DIIO y esto no lo cumple, es un número
-      // interno del predio. Sin formato configurado, se toma como DIIO.
-      const formato = formatoDiio();
-      const esDiio = !formato || formato.test(identificacion.replace(/\s+/g, ''));
-      const datos = {
-        [esDiio ? 'caravana_visual' : 'numero_interno']: identificacion,
-        sexo,
-        categoria,
-        etapa: ['TERNERA', 'TERNERO'].includes(categoria) ? 'CRIA' : 'RECRIA',
-        origen: 'COMPRADO',
-        fecha_ingreso: hoy(),
-        peso_ingreso_kg: peso,
+      const guardar = (campo) => {
+        const datos = {
+          [campo]: identificacion,
+          sexo,
+          categoria,
+          etapa: ['TERNERA', 'TERNERO'].includes(categoria) ? 'CRIA' : 'RECRIA',
+          origen: 'COMPRADO',
+          fecha_ingreso: hoy(),
+          peso_ingreso_kg: peso,
+        };
+        if (corral_id) datos.corral_id = Number(corral_id);
+        if (form.nacimiento.value) datos.fecha_nacimiento = form.nacimiento.value;
+        registrar('ANIMAL', datos, identificacion + ' · ' + legible(categoria) + ' · ' + fmt(peso, 1) + ' kg')
+          .then(() => mostrar('inicio'));
       };
-      if (corral_id) datos.corral_id = Number(corral_id);
-      if (form.nacimiento.value) datos.fecha_nacimiento = form.nacimiento.value;
 
-      registrar('ANIMAL', datos, identificacion + ' · ' + legible(categoria) + ' · ' + fmt(peso, 1) + ' kg')
-        .then(() => mostrar('inicio'));
+      /* Con formato de DIIO configurado, lo que no lo cumple puede ser un número
+         propio del campo o una caravana mal tipeada: se pregunta, no se adivina.
+         Sin formato configurado, se toma como DIIO. */
+      const formato = formatoDiio();
+      if (!formato || formato.test(identificacion.replace(/\s+/g, ''))) return guardar('caravana_visual');
+      confirmar({
+        titulo: '¿Es un número interno?',
+        texto: '«' + identificacion + '» no tiene el formato de un DIIO oficial. Si es la caravana del SAG, revisala: '
+          + 'puede faltar un dígito. Si es un número propio del campo, se guarda como número interno.',
+        si: 'Es número interno',
+        no: 'Corregir',
+        tono: 'ambar',
+        alConfirmar: () => guardar('numero_interno'),
+      });
     },
 
     tratamiento(form) {

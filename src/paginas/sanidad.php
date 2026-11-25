@@ -67,17 +67,15 @@ $tratamientos = filas(
     [$org],
 );
 
-/* Validación MVA: se calcula una vez por tratamiento, porque revisar la huella
-   implica leer a qué animales se aplicó. */
-$validacion = [];
-$pendientes = [];
-foreach ($tratamientos as $tratamiento) {
-    $validacion[(int) $tratamiento['id']] = estado_validacion($org, $tratamiento);
-    if ($validacion[(int) $tratamiento['id']] === 'PENDIENTE') {
-        $pendientes[] = $tratamiento;
-    }
-}
-$alterados = count(array_filter($validacion, static fn (string $e): bool => $e === 'ALTERADO'));
+// Estado MVA de cada tratamiento (revisa las huellas de todos en una pasada).
+$validacion = estados_validacion($org, $tratamientos);
+$pendientes = array_values(array_filter($tratamientos, static fn (array $t): bool => $t['validado_en'] === null));
+$alterados = array_count_values($validacion)['ALTERADO'] ?? 0;
+const INSIGNIA_VALIDACION = [
+    'PENDIENTE' => ['Pendiente', 'aviso'],
+    'VALIDADO'  => ['Validado', 'ok'],
+    'ALTERADO'  => ['Alterado', 'riesgo'],
+];
 $mi_mva = membresia_mva($org, (int) usuario_actual()['id']);
 $puedo_validar = puede('validar_tratamiento') && mva_vigente($mi_mva, hoy());
 
@@ -392,11 +390,8 @@ if (puede('registrar_tratamiento')) {
                 : '—' ?>
           </td>
           <td>
-            <?php $estado_mva = $validacion[(int) $tratamiento['id']]; ?>
-            <?php if ($estado_mva === 'PENDIENTE'): ?>
-              <?= insignia('Pendiente', 'aviso') ?>
-            <?php else: ?>
-              <?= $estado_mva === 'VALIDADO' ? insignia('Validado', 'ok') : insignia('Alterado', 'riesgo') ?>
+            <?= insignia(...INSIGNIA_VALIDACION[$validacion[(int) $tratamiento['id']]]) ?>
+            <?php if ($tratamiento['validado_en'] !== null): ?>
               <div class="secundario">
                 <?= h(trim(($tratamiento['validador_nombre'] ?? '') . ' ' . ($tratamiento['validador_apellido'] ?? ''))) ?>
                 · MVA N° <?= h($tratamiento['validado_mva_numero']) ?> · <?= fecha_corta($tratamiento['validado_en']) ?>

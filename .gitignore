@@ -8,6 +8,8 @@ datos/*.sqlite
 datos/*.sqlite-*
 datos/*.db
 datos/*.lock
+# Clave de las huellas MVA: propia de cada instalación
+datos/clave-huella.php
 
 # Sistema / editor
 .DS_Store

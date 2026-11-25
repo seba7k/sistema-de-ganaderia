@@ -3,7 +3,6 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../db.php';
 require_once __DIR__ . '/../vistas/layout.php';
-require_once __DIR__ . '/../dominio/mva.php';
 
 exigir_permiso('gestionar_usuarios');
 
@@ -18,74 +17,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $accion = entrada('accion');
     $yo = (int) usuario_actual()['id'];
 
-    /* Registro MVA (Médico Veterinario Autorizado ante el SAG).
-       Lo declara el administrador para su organización. Como el resto de los
-       cambios de acceso, nadie se lo carga a sí mismo: quien valida tratamientos
-       no puede ser también quien se dio la autorización. Dejar los tres campos
-       vacíos quita el registro; las validaciones ya hechas no cambian, porque
-       guardaron su propia copia del RUT y del número. */
+    // Registro MVA: las reglas viven en op_guardar_mva (src/operaciones.php).
     if ($accion === 'mva') {
-        $usuario_id = entrada_entera('usuario_id') ?? 0;
-        $miembro = fila(
-            'SELECT u.nombre, u.apellido, m.mva_numero FROM membresias m JOIN usuarios u ON u.id = m.usuario_id
-              WHERE m.organizacion_id = ? AND m.usuario_id = ?',
-            [$org, $usuario_id],
-        );
-        if ($miembro === null) {
-            flash('error', 'Esa persona no trabaja en esta organización.');
-            redirigir($volver);
+        try {
+            $resultado = op_guardar_mva($org, $yo, $_POST);
+        } catch (ErrorOperacion $error) {
+            volver_con_errores($error, $volver);
         }
-        if ($usuario_id === $yo) {
-            flash('error', 'No podés cargar tu propio registro MVA: pedíselo a otro administrador.');
-            redirigir($volver);
-        }
-        $nombre_miembro = $miembro['nombre'] . ' ' . $miembro['apellido'];
-
-        $quitar = entrada('mva_rut') === '' && entrada('mva_numero') === '' && entrada('mva_vigente_hasta') === '';
-        $rut = null;
-        $numero = null;
-        $vigencia = null;
-        if (!$quitar) {
-            $errores_mva = [];
-            $rut = normalizar_rut(entrada('mva_rut'));
-            if ($rut === null) {
-                $errores_mva[] = 'El RUT no es válido: revisá el dígito verificador.';
-            }
-            $numero = entrada('mva_numero');
-            if ($numero === '' || mb_strlen($numero) > 30) {
-                $errores_mva[] = 'Escribí el número de registro MVA (hasta 30 caracteres).';
-            }
-            $vigencia = entrada('mva_vigente_hasta');
-            $fecha = DateTimeImmutable::createFromFormat('!Y-m-d', $vigencia);
-            if ($fecha === false || $fecha->format('Y-m-d') !== $vigencia) {
-                $errores_mva[] = 'Indicá hasta qué fecha está vigente el registro.';
-            }
-            if ($errores_mva !== []) {
-                flash('error', 'Registro MVA de ' . $nombre_miembro . ': ' . implode(' ', $errores_mva));
-                redirigir($volver);
-            }
-        } elseif ($miembro['mva_numero'] === null) {
-            flash('error', $nombre_miembro . ' no tenía registro MVA cargado.');
-            redirigir($volver);
-        }
-
-        en_transaccion(static function () use ($org, $usuario_id, $rut, $numero, $vigencia, $yo, $nombre_miembro, $quitar): void {
-            consultar(
-                'UPDATE membresias SET mva_rut = ?, mva_numero = ?, mva_vigente_hasta = ?
-                  WHERE organizacion_id = ? AND usuario_id = ?',
-                [$rut, $numero, $vigencia, $org, $usuario_id],
-            );
-            registrar_bitacora(
-                $org, $yo, $quitar ? 'QUITA_MVA' : 'ACTUALIZA_MVA', 'membresias', $usuario_id,
-                $quitar
-                    ? $nombre_miembro
-                    : $nombre_miembro . ': MVA N° ' . $numero . ' · RUT ' . rut_legible($rut) . ' · vigente hasta ' . fecha_corta($vigencia),
-            );
-        });
-
-        flash('exito', $quitar
-            ? $nombre_miembro . ' ya no tiene registro MVA: no va a poder validar tratamientos.'
-            : 'Registro MVA de ' . $nombre_miembro . ' guardado, vigente hasta el ' . fecha_corta($vigencia) . '.');
+        flash('exito', $resultado['mensaje']);
         redirigir($volver);
     }
 
@@ -342,7 +281,13 @@ echo ayuda_pantalla('¿Qué puede hacer cada rol?', [
 
 /* ---------- Formulario de carga ---------- */
 
+/* Los errores de un registro MVA vuelven a la fila de esa persona, no al
+   formulario de alta. */
 $errores = errores_formulario();
+$es_error_mva = array_intersect(array_keys($errores), ['usuario_id', 'mva_rut', 'mva_numero', 'mva_vigente_hasta']) !== [];
+$mva_con_error = $es_error_mva ? (int) valor_previo('usuario_id') : 0;
+$errores_mva = $es_error_mva ? $errores : [];
+$errores = $es_error_mva ? [] : $errores;
 
 $roles_disponibles = [];
 foreach (ROLES as $rol_posible => $nombre_posible) {
@@ -466,7 +411,7 @@ $con_mva = array_values(array_filter(
   <div class="tabla-scroll">
     <table>
       <thead>
-        <tr><th>Veterinario</th><th>Registro actual</th><th>Actualizar (RUT · N° MVA · vigente hasta)</th></tr>
+        <tr><th>Veterinario</th><th>Registro actual</th><th>Actualizar</th></tr>
       </thead>
       <tbody>
       <?php foreach ($con_mva as $miembro): ?>
@@ -488,18 +433,29 @@ $con_mva = array_values(array_filter(
             <?php if ((int) $miembro['id'] === (int) usuario_actual()['id']): ?>
               <div class="secundario">Tu registro lo carga otro administrador</div>
             <?php else: ?>
-              <form method="post" action="<?= h(url('/usuarios')) ?>" class="acciones-fila">
-                <input type="hidden" name="csrf" value="<?= h(token_csrf()) ?>">
-                <input type="hidden" name="accion" value="mva">
-                <input type="hidden" name="usuario_id" value="<?= (int) $miembro['id'] ?>">
-                <input type="text" name="mva_rut" value="<?= h($miembro['mva_rut'] !== null ? rut_legible($miembro['mva_rut']) : '') ?>"
-                       placeholder="12.345.678-9" aria-label="RUT de <?= h($miembro['nombre']) ?>" size="12">
-                <input type="text" name="mva_numero" value="<?= h($miembro['mva_numero'] ?? '') ?>"
-                       placeholder="N° MVA" maxlength="30" aria-label="Número MVA de <?= h($miembro['nombre']) ?>" size="10">
-                <input type="date" name="mva_vigente_hasta" value="<?= h(substr((string) $miembro['mva_vigente_hasta'], 0, 10)) ?>"
-                       aria-label="Vigencia del registro de <?= h($miembro['nombre']) ?>">
-                <button class="boton menudo" type="submit">Guardar</button>
-              </form>
+              <?php
+              // Con errores vuelve lo que se había escrito; si no, lo guardado.
+              $con_error = $mva_con_error === (int) $miembro['id'];
+              $guardado = [
+                  'mva_rut' => $miembro['mva_rut'] !== null ? rut_legible($miembro['mva_rut']) : '',
+                  'mva_numero' => (string) ($miembro['mva_numero'] ?? ''),
+                  'mva_vigente_hasta' => substr((string) $miembro['mva_vigente_hasta'], 0, 10),
+              ];
+              $errores_fila = $con_error ? $errores_mva : [];
+              $opciones = static fn (string $c, array $o = []): array => $o + [
+                  'id' => 'mva' . (int) $miembro['id'] . '_' . $c,
+                  'valor' => $con_error ? valor_previo($c) : $guardado[$c],
+              ];
+              echo '<div class="formulario-mva">' . formulario(url('/usuarios'), implode('', [
+                  '<input type="hidden" name="accion" value="mva"><input type="hidden" name="usuario_id" value="' . (int) $miembro['id'] . '">',
+                  campo('mva_rut', 'RUT', $errores_fila, 'text', '', $opciones('mva_rut', ['placeholder' => '12.345.678-5'])),
+                  campo('mva_numero', 'N° de registro MVA', $errores_fila, 'text', '', $opciones('mva_numero', ['maxlength' => 30])),
+                  campo('mva_vigente_hasta', 'Vigente hasta', $errores_fila, 'date', '', $opciones('mva_vigente_hasta')),
+              ]), 'Guardar registro') . '</div>';
+              if ($con_error && isset($errores_mva['usuario_id'])) {
+                  echo '<div class="error-campo">' . h($errores_mva['usuario_id']) . '</div>';
+              }
+              ?>
               <div class="secundario">Dejá los tres campos vacíos para quitar el registro</div>
             <?php endif; ?>
           </td>
