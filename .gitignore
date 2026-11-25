@@ -7,9 +7,13 @@ config.local.php
 datos/*.sqlite
 datos/*.sqlite-*
 datos/*.db
+datos/*.lock
 
 # Sistema / editor
 .DS_Store
 Thumbs.db
 .vscode/
 *.log
+
+# Archivo de workspace local de VS Code (rutas propias de esta PC)
+*.code-workspace

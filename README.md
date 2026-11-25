@@ -136,6 +136,7 @@ recetas con descuento de bodega, «Por reponer», y cierre de lote con margen ne
 php/
 ├── index.php              Front controller: web, API y archivos de la app
 ├── .htaccess              Ruteo y bloqueo de lo interno (Apache/cPanel)
+├── config.ejemplo.php     Plantilla: copiarla como config.php (no se sube a git)
 ├── config.php             Único archivo a tocar al instalar
 ├── esquema.mysql.sql      Tablas para MySQL/MariaDB (producción)
 ├── esquema.sqlite.sql     Las mismas tablas para SQLite (desarrollo)

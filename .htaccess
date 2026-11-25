@@ -19,7 +19,7 @@ AddType application/manifest+json .webmanifest
 
     # Código y datos internos: nunca se sirven por la web.
     RewriteRule ^(src|datos|pruebas)(/.*)?$ - [F,L]
-    RewriteRule ^(seed\.php|config(\.local)?\.php|esquema\.[a-z]+\.sql|[^/]+\.md)$ - [F,L]
+    RewriteRule ^(seed\.php|config(\.local|\.ejemplo)?\.php|esquema\.[a-z]+\.sql|[^/]+\.md)$ - [F,L]
 
     # Todo lo que no sea un archivo o carpeta real va al front controller.
     RewriteCond %{REQUEST_FILENAME} !-f
@@ -28,7 +28,7 @@ AddType application/manifest+json .webmanifest
 </IfModule>
 
 # Respaldo por si el hosting no tiene mod_rewrite: lo sensible sigue bloqueado.
-<FilesMatch "\.(sqlite|sqlite3|sqlite-journal|db|sql|md|log|lock|sh|ini|bak)$|^(seed|config|config\.local)\.php$|^\.ht">
+<FilesMatch "\.(sqlite|sqlite3|sqlite-journal|db|sql|md|log|lock|sh|ini|bak)$|^(seed|config|config\.local|config\.ejemplo)\.php$|^\.ht">
     <IfModule mod_authz_core.c>
         Require all denied
     </IfModule>
