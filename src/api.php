@@ -30,7 +30,11 @@ const TIPOS_OPERACION = [
     'ENTREGA'     => ['permiso' => 'registrar_entrega', 'funcion' => 'op_entrega'],
     'TRASLADO'    => ['permiso' => 'registrar_traslado', 'funcion' => 'op_traslado'],
     'BAJA'        => ['permiso' => 'registrar_baja', 'funcion' => 'op_baja'],
+    'VALIDACION'  => ['permiso' => 'validar_tratamiento', 'funcion' => 'op_validar_tratamiento'],
 ];
+
+/** Operaciones que solo existen con la gestión avanzada: sin ella no hay sanidad con productos. */
+const OPERACIONES_AVANZADAS = ['TRATAMIENTO', 'VALIDACION'];
 
 const MAXIMO_OPERACIONES_POR_ENVIO = 100;
 
@@ -135,7 +139,7 @@ function operaciones_del_rol(string $rol): array
     return array_values(array_filter(
         array_keys(TIPOS_OPERACION),
         static fn (string $tipo): bool => rol_puede($rol, TIPOS_OPERACION[$tipo]['permiso'])
-            && (GESTION_AVANZADA || $tipo !== 'TRATAMIENTO'),
+            && (GESTION_AVANZADA || !in_array($tipo, OPERACIONES_AVANZADAS, true)),
     ));
 }
 
@@ -248,9 +252,13 @@ function api_catalogo(): never
 {
     exigir_metodo('GET');
     $quien = identidad_api();
-    responder(200, catalogo_app((int) $quien['organizacion_id']) + [
+    $operaciones = operaciones_del_rol($quien['rol']);
+    $extra = in_array('VALIDACION', $operaciones, true)
+        ? validaciones_app((int) $quien['organizacion_id'], (int) $quien['usuario_id'])
+        : [];
+    responder(200, catalogo_app((int) $quien['organizacion_id']) + $extra + [
         'usuario'     => datos_usuario_api($quien),
-        'operaciones' => operaciones_del_rol($quien['rol']),
+        'operaciones' => $operaciones,
     ]);
 }
 
@@ -306,7 +314,7 @@ function procesar_operacion(int $org, int $usuario_id, string $rol, array $opera
         return ['uuid' => $uuid, 'estado' => 'DUPLICADA', 'mensaje' => $previa['mensaje'], 'id' => $previa['entidad_id']];
     }
 
-    if ($tipo === 'TRATAMIENTO' && !GESTION_AVANZADA) {
+    if (in_array($tipo, OPERACIONES_AVANZADAS, true) && !GESTION_AVANZADA) {
         /* Mismo criterio que la lista de operaciones que se le manda a la app:
            si la sanidad está apagada, un tratamiento encolado antes de apagarla
            no puede entrar por la puerta de atrás y dejar una carencia que ninguna

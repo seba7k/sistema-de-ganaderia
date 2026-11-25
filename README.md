@@ -111,6 +111,21 @@ aunque lo fuercen.
 | Ventas, lotes, compras, raciones, predios y usuarios | ✔ | — | — |
 | Alertas de descarte | ✔ | ✔ | — |
 | App de terreno | ✔ | ✔ | ✔ |
+| Validar tratamientos (requiere registro MVA vigente) | ✔ | ✔ | — |
+
+**Médico Veterinario Autorizado (MVA).** Con la gestión avanzada encendida, cada
+tratamiento queda *pendiente* hasta que lo valida un veterinario con registro
+MVA vigente (RUT, número y fecha de vigencia). El administrador carga ese
+registro en **Usuarios**, por organización, y nunca el suyo propio. Al validar se
+copian el RUT y el número del MVA y se guarda una huella (SHA-256) de lo
+firmado: qué producto, a qué animales, dosis, fecha y carencia. Si alguien cambia
+esos datos directo en la base, **Sanidad** muestra el tratamiento como
+*Alterado*. Un tratamiento validado solo lo puede anular otro MVA vigente.
+También se valida desde la app de terreno (tarea «Validar tratamientos»), aun sin
+señal: la validación queda en la cola del teléfono y el servidor vuelve a revisar
+la vigencia del registro al recibirla. Esto
+deja constancia dentro del sistema; no reemplaza la firma electrónica avanzada
+ni los trámites ante el SAG.
 
 ## Qué cubre de la especificación
 

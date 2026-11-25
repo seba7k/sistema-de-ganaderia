@@ -26,6 +26,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         redirigir($volver);
     }
 
+    if (entrada('accion') === 'validar') {
+        exigir_post_valido('validar_tratamiento', $volver);
+        try {
+            $resultado = op_validar_tratamiento($org, (int) usuario_actual()['id'], $_POST);
+        } catch (ErrorOperacion $error) {
+            volver_con_errores($error, $volver);
+        }
+        flash('exito', $resultado['mensaje']);
+        redirigir($volver);
+    }
+
     exigir_post_valido('registrar_tratamiento', $volver);
 
     // Stock, carencia y destinatarios se validan en la operación compartida:
@@ -43,16 +54,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 $tratamientos = filas(
     'SELECT t.*, i.nombre AS producto, i.principio_activo, c.nombre AS corral,
             l.codigo AS lote, u.nombre AS responsable_nombre, u.apellido AS responsable_apellido,
+            v.nombre AS validador_nombre, v.apellido AS validador_apellido,
             (SELECT COUNT(*) FROM aplicaciones_tratamiento ap WHERE ap.tratamiento_id = t.id) AS aplicados
        FROM tratamientos t
        JOIN insumos i ON i.id = t.insumo_id
        LEFT JOIN corrales c ON c.id = t.corral_id
        LEFT JOIN lotes l ON l.id = t.lote_id
        LEFT JOIN usuarios u ON u.id = t.responsable_id
+       LEFT JOIN usuarios v ON v.id = t.validado_por
       WHERE t.organizacion_id = ? AND t.anulada = 0' . filtro_predio('t') . '
       ORDER BY t.fecha DESC',
     [$org],
 );
+
+/* Validación MVA: se calcula una vez por tratamiento, porque revisar la huella
+   implica leer a qué animales se aplicó. */
+$validacion = [];
+$pendientes = [];
+foreach ($tratamientos as $tratamiento) {
+    $validacion[(int) $tratamiento['id']] = estado_validacion($org, $tratamiento);
+    if ($validacion[(int) $tratamiento['id']] === 'PENDIENTE') {
+        $pendientes[] = $tratamiento;
+    }
+}
+$alterados = count(array_filter($validacion, static fn (string $e): bool => $e === 'ALTERADO'));
+$mi_mva = membresia_mva($org, (int) usuario_actual()['id']);
+$puedo_validar = puede('validar_tratamiento') && mva_vigente($mi_mva, hoy());
 
 $bloqueados = [];
 $libres = [];
@@ -155,6 +182,15 @@ if (puede('registrar_tratamiento')) {
     <div class="cifra"><?= numero(count($tratamientos)) ?></div>
     <div class="nota"><?= numero(count($bloqueados)) ?> con retiro sin cumplir</div>
   </div>
+  <div class="indicador <?= $alterados > 0 ? 'riesgo' : ($pendientes !== [] ? 'aviso' : 'ok') ?>">
+    <div class="rotulo">Sin validar por MVA</div>
+    <div class="cifra"><?= numero(count($pendientes)) ?></div>
+    <div class="nota">
+      <?= $alterados > 0
+          ? numero($alterados) . ' validado(s) con datos alterados'
+          : 'tratamientos pendientes de firma' ?>
+    </div>
+  </div>
   <div class="indicador">
     <div class="rotulo">Costo sanitario</div>
     <div class="cifra" style="font-size: 25px">
@@ -173,6 +209,88 @@ if (puede('registrar_tratamiento')) {
     Cuando la carencia se cumple, queda <strong>apto</strong>.
   </div>
 </div>
+
+<?php if ($alterados > 0): ?>
+<div class="mensaje error">
+  <span class="marca-aviso">!</span>
+  <div>
+    <strong>Hay <?= numero($alterados) ?> tratamiento(s) validado(s) cuyos datos ya no coinciden con lo que firmó el MVA.</strong>
+    Alguien los cambió fuera del sistema después de la validación. Están marcados como
+    «Alterado» en el historial: revisalos con el veterinario y con la bitácora.
+  </div>
+</div>
+<?php endif; ?>
+
+<?php if (puede('validar_tratamiento') && $pendientes !== []): ?>
+<div class="bloque">
+  <header>
+    <div>
+      <h2>Pendientes de validar</h2>
+      <div class="sub">
+        <?php if ($puedo_validar): ?>
+          Vas a validar como MVA N° <?= h($mi_mva['mva_numero']) ?> · RUT <?= h(rut_legible($mi_mva['mva_rut'])) ?>
+        <?php elseif ($mi_mva !== null && $mi_mva['mva_numero'] !== null): ?>
+          Tu registro MVA venció el <?= fecha_corta($mi_mva['mva_vigente_hasta']) ?>: pedile al administrador que lo actualice
+        <?php else: ?>
+          Para validar tenés que tener un registro MVA vigente: lo carga el administrador en Usuarios
+        <?php endif; ?>
+      </div>
+    </div>
+    <?= insignia(numero(count($pendientes)) . ' sin firma', 'aviso') ?>
+  </header>
+  <div class="tabla-scroll">
+    <table>
+      <thead>
+        <tr>
+          <th>Fecha</th>
+          <th>Producto</th>
+          <th>Dónde</th>
+          <th class="num">Cabezas</th>
+          <th>Cargó</th>
+          <?php if ($puedo_validar): ?><th></th><?php endif; ?>
+        </tr>
+      </thead>
+      <tbody>
+      <?php foreach ($pendientes as $tratamiento): ?>
+        <tr>
+          <td><?= fecha_corta($tratamiento['fecha']) ?></td>
+          <td>
+            <span class="principal"><?= h($tratamiento['producto']) ?></span>
+            <div class="secundario">
+              <?= h(legible($tratamiento['tipo'])) ?> · <?= h(legible($tratamiento['via'])) ?> ·
+              <?= numero((float) $tratamiento['dosis_por_animal'], 1) ?> por animal ·
+              carencia <?= (int) $tratamiento['dias_carencia_carne'] ?> d
+            </div>
+          </td>
+          <td>
+            <?= h($tratamiento['corral'] ?? $tratamiento['lote'] ?? '—') ?>
+            <?php if ($tratamiento['diagnostico'] !== null): ?>
+              <div class="secundario"><?= h($tratamiento['diagnostico']) ?></div>
+            <?php endif; ?>
+          </td>
+          <td class="num"><?= numero((int) $tratamiento['cantidad_animales']) ?></td>
+          <td>
+            <?= $tratamiento['responsable_nombre'] !== null
+                ? h($tratamiento['responsable_nombre'] . ' ' . $tratamiento['responsable_apellido'])
+                : '—' ?>
+          </td>
+          <?php if ($puedo_validar): ?>
+            <td class="num">
+              <form method="post" action="<?= h(url('/sanidad')) ?>">
+                <input type="hidden" name="csrf" value="<?= h(token_csrf()) ?>">
+                <input type="hidden" name="accion" value="validar">
+                <input type="hidden" name="tratamiento_id" value="<?= (int) $tratamiento['id'] ?>">
+                <button class="boton menudo" type="submit">Validar</button>
+              </form>
+            </td>
+          <?php endif; ?>
+        </tr>
+      <?php endforeach; ?>
+      </tbody>
+    </table>
+  </div>
+</div>
+<?php endif; ?>
 
 <?php if ($bloqueados !== []): ?>
 <div class="bloque">
@@ -242,6 +360,7 @@ if (puede('registrar_tratamiento')) {
           <th>Dónde</th>
           <th class="num">Cabezas</th>
           <th>Responsable</th>
+          <th>Validación MVA</th>
           <th>Estado</th>
           <?php if (puede('anular_registro')): ?><th></th><?php endif; ?>
         </tr>
@@ -272,6 +391,18 @@ if (puede('registrar_tratamiento')) {
                 ? h($tratamiento['responsable_nombre'] . ' ' . $tratamiento['responsable_apellido'])
                 : '—' ?>
           </td>
+          <td>
+            <?php $estado_mva = $validacion[(int) $tratamiento['id']]; ?>
+            <?php if ($estado_mva === 'PENDIENTE'): ?>
+              <?= insignia('Pendiente', 'aviso') ?>
+            <?php else: ?>
+              <?= $estado_mva === 'VALIDADO' ? insignia('Validado', 'ok') : insignia('Alterado', 'riesgo') ?>
+              <div class="secundario">
+                <?= h(trim(($tratamiento['validador_nombre'] ?? '') . ' ' . ($tratamiento['validador_apellido'] ?? ''))) ?>
+                · MVA N° <?= h($tratamiento['validado_mva_numero']) ?> · <?= fecha_corta($tratamiento['validado_en']) ?>
+              </div>
+            <?php endif; ?>
+          </td>
           <td><?= insignia(etiqueta_retiro($retiro['estado']), $tono) ?></td>
           <?php if (puede('anular_registro')): ?>
             <td class="num"><?= boton_anular(url('/sanidad'), 'TRATAMIENTO', (int) $tratamiento['id']) ?></td>
@@ -279,7 +410,7 @@ if (puede('registrar_tratamiento')) {
         </tr>
       <?php endforeach; ?>
       <?php if ($tratamientos === []): ?>
-        <tr><td colspan="<?= puede('anular_registro') ? 7 : 6 ?>" class="vacio">Sin tratamientos registrados.</td></tr>
+        <tr><td colspan="<?= puede('anular_registro') ? 8 : 7 ?>" class="vacio">Sin tratamientos registrados.</td></tr>
       <?php endif; ?>
       </tbody>
     </table>

@@ -6,6 +6,7 @@ require_once __DIR__ . '/formato.php';
 require_once __DIR__ . '/dominio/indicadores.php';
 require_once __DIR__ . '/dominio/retiros.php';
 require_once __DIR__ . '/dominio/reproduccion.php';
+require_once __DIR__ . '/dominio/mva.php';
 
 /**
  * Operaciones de terreno.
@@ -270,6 +271,12 @@ function op_anular(int $org, int $usuario_id, array $d): array
     }
     if ((int) $registro['anulada'] === 1) {
         throw new ErrorOperacion(['registro_id' => 'Ese registro ya estaba anulado.']);
+    }
+    /* Un tratamiento con la firma de un MVA no lo deshace cualquiera: solo otro
+       registro MVA vigente puede responder por la anulación. */
+    if ($tipo === 'TRATAMIENTO' && ($registro['validado_en'] ?? null) !== null
+        && !mva_vigente(membresia_mva($org, $usuario_id), hoy())) {
+        throw new ErrorOperacion(['registro_id' => 'Este tratamiento está validado por un MVA: solo un MVA con registro vigente puede anularlo.']);
     }
 
     en_transaccion(static function () use ($org, $usuario_id, $tipo, $tabla, $id, $motivo, $registro): void {
@@ -1091,6 +1098,159 @@ function op_tratamiento(int $org, int $usuario_id, array $d): array
             . ((int) $insumo['dias_carencia_carne'] > 0
                 ? 'Bloqueado para faena hasta el ' . fecha_corta($habilitacion) . '.'
                 : 'Sin carencia: puede ir a faena.'),
+    ];
+}
+
+/* ============================================================
+   Validación del Médico Veterinario Autorizado (MVA)
+
+   El tratamiento lo puede cargar cualquiera con permiso; validarlo, solo quien
+   tiene un registro MVA vigente en esta organización. Al validar se congela lo
+   firmado: el RUT y el número del MVA se copian, y la huella resume el
+   tratamiento completo. Validar no reemplaza ningún trámite ante el SAG: deja
+   constancia, dentro del sistema, de qué veterinario respondió por cada evento.
+   ============================================================ */
+
+/** Registro MVA de una persona en esta organización, o null si no tiene acceso. */
+function membresia_mva(int $org, int $usuario_id): ?array
+{
+    return fila(
+        'SELECT m.mva_rut, m.mva_numero, m.mva_vigente_hasta, u.nombre, u.apellido
+           FROM membresias m JOIN usuarios u ON u.id = m.usuario_id
+          WHERE m.organizacion_id = ? AND m.usuario_id = ? AND m.activa = 1',
+        [$org, $usuario_id],
+    );
+}
+
+/** Ids de los animales a los que se aplicó un tratamiento. */
+function animales_del_tratamiento(int $org, int $tratamiento_id): array
+{
+    return array_map('intval', array_column(filas(
+        'SELECT animal_id FROM aplicaciones_tratamiento WHERE organizacion_id = ? AND tratamiento_id = ?',
+        [$org, $tratamiento_id],
+    ), 'animal_id'));
+}
+
+/**
+ * Estado de la validación de un tratamiento: PENDIENTE, VALIDADO o ALTERADO
+ * (estaba validado, pero sus datos ya no coinciden con la huella).
+ */
+function estado_validacion(int $org, array $tratamiento): string
+{
+    if ($tratamiento['validado_en'] === null) {
+        return 'PENDIENTE';
+    }
+    $huella = huella_tratamiento($tratamiento, animales_del_tratamiento($org, (int) $tratamiento['id']));
+    return hash_equals((string) $tratamiento['huella'], $huella) ? 'VALIDADO' : 'ALTERADO';
+}
+
+/**
+ * Lo que la app necesita para validar sin señal: el registro MVA de quien
+ * ingresó y los tratamientos que esperan su firma.
+ *
+ * La vigencia se manda para avisar en el teléfono, pero la decisión es del
+ * servidor: si el registro vence antes de que la validación llegue, se rechaza.
+ */
+function validaciones_app(int $org, int $usuario_id): array
+{
+    $mva = membresia_mva($org, $usuario_id);
+
+    $pendientes = array_map(static fn (array $t): array => [
+        'id'          => (int) $t['id'],
+        'fecha'       => substr((string) $t['fecha'], 0, 10),
+        'producto'    => $t['producto'],
+        'unidad'      => $t['unidad'],
+        'tipo'        => $t['tipo'],
+        'via'         => $t['via'],
+        'dosis'       => (float) $t['dosis_por_animal'],
+        'cabezas'     => (int) $t['cantidad_animales'],
+        'carencia'    => (int) $t['dias_carencia_carne'],
+        'diagnostico' => $t['diagnostico'],
+        'donde'       => $t['corral'] ?? $t['lote'],
+        'cargo'       => $t['responsable_nombre'] !== null ? trim($t['responsable_nombre'] . ' ' . $t['responsable_apellido']) : null,
+    ], filas(
+        "SELECT t.id, t.fecha, t.tipo, t.via, t.dosis_por_animal, t.cantidad_animales, t.dias_carencia_carne,
+                t.diagnostico, i.nombre AS producto, i.unidad, c.nombre AS corral, l.codigo AS lote,
+                u.nombre AS responsable_nombre, u.apellido AS responsable_apellido
+           FROM tratamientos t
+           JOIN insumos i ON i.id = t.insumo_id
+           LEFT JOIN corrales c ON c.id = t.corral_id
+           LEFT JOIN lotes l ON l.id = t.lote_id
+           LEFT JOIN usuarios u ON u.id = t.responsable_id
+          WHERE t.organizacion_id = ? AND t.anulada = 0 AND t.validado_en IS NULL
+          ORDER BY t.fecha DESC, t.id DESC
+          LIMIT 200",
+        [$org],
+    ));
+
+    return [
+        'mva' => $mva === null || $mva['mva_numero'] === null ? null : [
+            'numero'        => $mva['mva_numero'],
+            'rut'           => rut_legible($mva['mva_rut']),
+            'vigente_hasta' => substr((string) $mva['mva_vigente_hasta'], 0, 10),
+            'vigente'       => mva_vigente($mva, hoy()),
+        ],
+        'por_validar' => $pendientes,
+    ];
+}
+
+function op_validar_tratamiento(int $org, int $usuario_id, array $d): array
+{
+    $id = dato_entero($d, 'tratamiento_id');
+    if ($id === null) {
+        throw new ErrorOperacion(['tratamiento_id' => 'Falta indicar qué tratamiento se valida.']);
+    }
+
+    $mva = membresia_mva($org, $usuario_id);
+    if (!mva_vigente($mva, hoy())) {
+        throw new ErrorOperacion(['tratamiento_id' => $mva !== null && $mva['mva_numero'] !== null
+            ? 'Tu registro MVA venció el ' . fecha_corta($mva['mva_vigente_hasta']) . '. Pedile al administrador que actualice la vigencia.'
+            : 'Para validar hace falta tener cargado un registro MVA vigente. Lo carga el administrador en Usuarios.']);
+    }
+
+    $tratamiento = fila('SELECT * FROM tratamientos WHERE organizacion_id = ? AND id = ?', [$org, $id]);
+    if ($tratamiento === null) {
+        throw new ErrorOperacion(['tratamiento_id' => 'Ese tratamiento no existe en esta organización.']);
+    }
+    if ((int) $tratamiento['anulada'] === 1) {
+        throw new ErrorOperacion(['tratamiento_id' => 'Ese tratamiento está anulado: no se puede validar.']);
+    }
+    if ($tratamiento['validado_en'] !== null) {
+        throw new ErrorOperacion(['tratamiento_id' => 'Ese tratamiento ya estaba validado.']);
+    }
+
+    $validado = $tratamiento;
+    $validado['validado_por'] = $usuario_id;
+    $validado['validado_en'] = ahora();
+    $validado['validado_mva_rut'] = $mva['mva_rut'];
+    $validado['validado_mva_numero'] = $mva['mva_numero'];
+    $huella = huella_tratamiento($validado, animales_del_tratamiento($org, $id));
+
+    en_transaccion(static function () use ($org, $usuario_id, $id, $validado, $huella, $mva): void {
+        // La condición sobre validado_en evita que dos validaciones simultáneas
+        // se pisen: la segunda no encuentra la fila y avisa.
+        $actualizada = consultar(
+            'UPDATE tratamientos
+                SET validado_por = ?, validado_en = ?, validado_mva_rut = ?, validado_mva_numero = ?, huella = ?
+              WHERE id = ? AND organizacion_id = ? AND anulada = 0 AND validado_en IS NULL',
+            [
+                $usuario_id, $validado['validado_en'], $validado['validado_mva_rut'],
+                $validado['validado_mva_numero'], $huella, $id, $org,
+            ],
+        );
+        if ($actualizada->rowCount() !== 1) {
+            throw new ErrorOperacion(['tratamiento_id' => 'Ese tratamiento ya estaba validado o fue anulado recién.']);
+        }
+        registrar_bitacora(
+            $org, $usuario_id, 'VALIDA_TRATAMIENTO', 'tratamientos', $id,
+            'MVA N° ' . $mva['mva_numero'] . ' · RUT ' . rut_legible($mva['mva_rut']),
+        );
+    });
+
+    return [
+        'id' => $id,
+        'mensaje' => 'Tratamiento validado por ' . $mva['nombre'] . ' ' . $mva['apellido']
+            . ' (MVA N° ' . $mva['mva_numero'] . ').',
     ];
 }
 

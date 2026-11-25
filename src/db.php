@@ -174,6 +174,32 @@ function migrar_base(PDO $pdo): void
         }
     }
 
+    /* Médico Veterinario Autorizado (v1.1): su registro en la membresía y la
+       validación de los tratamientos. */
+    $mysql = motor_bd() === 'mysql';
+    foreach ([
+        'membresias' => [
+            'mva_rut'           => $mysql ? 'VARCHAR(12) NULL' : 'TEXT',
+            'mva_numero'        => $mysql ? 'VARCHAR(30) NULL' : 'TEXT',
+            'mva_vigente_hasta' => $mysql ? 'DATE NULL' : 'TEXT',
+        ],
+        'tratamientos' => [
+            'validado_por'        => $mysql ? 'INT NULL' : 'INTEGER',
+            'validado_en'         => $mysql ? 'DATETIME NULL' : 'TEXT',
+            'validado_mva_rut'    => $mysql ? 'VARCHAR(12) NULL' : 'TEXT',
+            'validado_mva_numero' => $mysql ? 'VARCHAR(30) NULL' : 'TEXT',
+            'huella'              => $mysql ? 'CHAR(64) NULL' : 'TEXT',
+        ],
+    ] as $tabla => $columnas) {
+        foreach ($columnas as $columna => $tipo) {
+            try {
+                $pdo->query('SELECT ' . $columna . ' FROM ' . $tabla . ' LIMIT 1');
+            } catch (PDOException) {
+                $pdo->exec('ALTER TABLE ' . $tabla . ' ADD COLUMN ' . $columna . ' ' . $tipo);
+            }
+        }
+    }
+
     try {
         $pdo->query('SELECT 1 FROM bitacora LIMIT 1');
         $pdo->query('SELECT 1 FROM notas_animal LIMIT 1');

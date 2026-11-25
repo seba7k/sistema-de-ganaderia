@@ -416,6 +416,10 @@ label { display: block; margin: 20px 0 8px; color: var(--tinta-2); font-size: 15
 .cola .motivo { margin-top: 8px; color: var(--rojo-oscuro); font-weight: 700; }
 .cola .acciones { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .cola .acciones .boton { min-height: 52px; margin-top: 10px; font-size: 16px; }
+/* Validación MVA: un solo botón, ancho completo, y borde verde en vez de ámbar. */
+.cola.validar li { border-left-color: var(--verde); }
+.cola.validar .acciones { grid-template-columns: 1fr; }
+.tarea-validacion { --c: var(--verde); }
 
 /* ---------- Ingreso ---------- */
 .ingreso { max-width: 460px; padding-top: max(36px, env(safe-area-inset-top)); }
