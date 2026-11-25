@@ -10,6 +10,9 @@ datos/*.db
 datos/*.lock
 # Clave de las huellas MVA: propia de cada instalación
 datos/clave-huella.php
+# Estado local: registro de errores, avisos enviados y marca de retención
+datos/*.json
+datos/retencion.txt
 
 # Sistema / editor
 .DS_Store

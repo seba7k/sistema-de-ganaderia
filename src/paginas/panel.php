@@ -214,6 +214,19 @@ echo ayuda_pantalla('¿Qué significa cada número?', [
         . 'vacas para descarte, pesajes anormales'
         . (GESTION_AVANZADA ? ', insumos por reponer' : '') . ' o corrales pasados de capacidad.',
 ]);
+
+// Al administrador se le muestra si el servidor tuvo errores que nadie revisó.
+if (puede('ver_errores') && ($sin_revisar = errores_sin_revisar()) > 0) {
+    echo '<div class="mensaje error"><span class="marca-aviso">!</span><div>El servidor tuvo '
+        . numero($sin_revisar) . ($sin_revisar === 1 ? ' error' : ' errores distintos') . ' en las últimas 24 horas. '
+        . '<a href="' . h(url('/errores')) . '">Ver errores del servidor →</a></div></div>';
+}
+// Solicitudes de datos personales con plazo legal de respuesta (Ley 21.719).
+if (puede('gestionar_usuarios') && ($pendientes_datos = solicitudes_pendientes(organizacion_actual())) > 0) {
+    echo '<div class="mensaje info"><span class="marca-aviso">i</span><div>Hay ' . numero($pendientes_datos)
+        . ($pendientes_datos === 1 ? ' solicitud' : ' solicitudes') . ' de datos personales por responder, con plazo legal. '
+        . '<a href="' . h(url('/solicitudes-datos')) . '">Responder →</a></div></div>';
+}
 ?>
 
 <section class="indicadores">

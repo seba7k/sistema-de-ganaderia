@@ -364,6 +364,7 @@ function procesar_operacion(int $org, int $usuario_id, string $rol, array $opera
             return ['uuid' => $uuid, 'estado' => 'DUPLICADA', 'mensaje' => 'Ya estaba guardada.'];
         }
         error_log('[ganaderia] sincronización ' . $uuid . ': ' . $error->getMessage());
+        registrar_error_servidor('ERROR', 'Sincronización de la app: ' . get_class($error), $error->getMessage(), $error->getFile(), $error->getLine());
         return ['uuid' => $uuid, 'estado' => 'ERROR', 'mensaje' => 'Error del servidor al guardar. Se reintentará.'];
     }
 

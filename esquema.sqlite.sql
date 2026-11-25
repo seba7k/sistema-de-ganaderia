@@ -432,3 +432,30 @@ CREATE TABLE IF NOT EXISTS detalles_salida (
   UNIQUE (salida_id, animal_id)
 );
 CREATE INDEX IF NOT EXISTS idx_detalle_salida_animal ON detalles_salida(animal_id);
+
+-- v1.5: Ley 21.719 de protección de datos personales.
+-- Solicitudes de los titulares (acceso, rectificación, supresión, oposición,
+-- portabilidad, bloqueo), con su plazo de respuesta.
+CREATE TABLE IF NOT EXISTS solicitudes_datos (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  organizacion_id INTEGER NOT NULL REFERENCES organizaciones(id),
+  usuario_id      INTEGER NOT NULL REFERENCES usuarios(id),
+  tipo            TEXT NOT NULL,
+  detalle         TEXT,
+  estado          TEXT NOT NULL DEFAULT 'PENDIENTE',
+  creada_en       TEXT NOT NULL,
+  vence_el        TEXT NOT NULL,
+  respuesta       TEXT,
+  respondida_por  INTEGER REFERENCES usuarios(id),
+  respondida_en   TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_solicitudes_org ON solicitudes_datos(organizacion_id, estado);
+
+-- Constancia de que cada persona recibió la información de la política de privacidad vigente.
+CREATE TABLE IF NOT EXISTS aceptaciones_privacidad (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  usuario_id INTEGER NOT NULL REFERENCES usuarios(id),
+  version    TEXT NOT NULL,
+  aceptada_en TEXT NOT NULL,
+  UNIQUE (usuario_id, version)
+);

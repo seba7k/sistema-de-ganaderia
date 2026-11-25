@@ -183,6 +183,12 @@ function migraciones(): array
                 $pdo->exec($sentencia);
             }
         },
+        // v1.5: Ley 21.719 — solicitudes de los titulares y constancia de la política.
+        'privacidad' => static function (PDO $pdo): void {
+            foreach (sentencias_sql((string) file_get_contents(archivo_esquema())) as $sentencia) {
+                $pdo->exec($sentencia);
+            }
+        },
     ];
 }
 

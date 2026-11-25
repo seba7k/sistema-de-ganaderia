@@ -35,12 +35,12 @@ const PERMISOS_POR_ROL = [
         'registrar_tratamiento', 'validar_tratamiento', 'registrar_servicio', 'registrar_diagnostico', 'registrar_parto',
         'registrar_secado', 'registrar_nota',
         'anular_registro', 'ver_bitacora',
-        'ver_descartes', 'usar_app',
+        'ver_descartes', 'usar_app', 'ver_mis_datos',
     ],
     'OPERARIO' => [
         'ver_hacienda', 'ver_corrales', 'ver_alimentacion', 'ver_sanidad', 'ver_reproduccion',
         'registrar_pesada', 'registrar_baja', 'registrar_parto', 'registrar_secado', 'registrar_nota',
-        'registrar_entrega', 'registrar_traslado',
+        'registrar_entrega', 'registrar_traslado', 'ver_mis_datos',
         'usar_app',
     ],
 ];

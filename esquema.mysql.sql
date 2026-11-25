@@ -593,3 +593,36 @@ CREATE TABLE IF NOT EXISTS detalles_salida (
   CONSTRAINT fk_dsal_salida FOREIGN KEY (salida_id) REFERENCES salidas (id),
   CONSTRAINT fk_dsal_animal FOREIGN KEY (animal_id) REFERENCES animales (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- v1.5: Ley 21.719 de protección de datos personales.
+-- Solicitudes de los titulares (acceso, rectificación, supresión, oposición,
+-- portabilidad, bloqueo), con su plazo de respuesta.
+CREATE TABLE IF NOT EXISTS solicitudes_datos (
+  id              INT NOT NULL AUTO_INCREMENT,
+  organizacion_id INT NOT NULL,
+  usuario_id      INT NOT NULL,
+  tipo            VARCHAR(20) NOT NULL,
+  detalle         VARCHAR(1000) NULL,
+  estado          VARCHAR(20) NOT NULL DEFAULT 'PENDIENTE',
+  creada_en       DATETIME NOT NULL,
+  vence_el        DATE NOT NULL,
+  respuesta       VARCHAR(1000) NULL,
+  respondida_por  INT NULL,
+  respondida_en   DATETIME NULL,
+  PRIMARY KEY (id),
+  KEY idx_solicitudes_org (organizacion_id, estado),
+  CONSTRAINT fk_sol_org FOREIGN KEY (organizacion_id) REFERENCES organizaciones (id),
+  CONSTRAINT fk_sol_usuario FOREIGN KEY (usuario_id) REFERENCES usuarios (id),
+  CONSTRAINT fk_sol_respondida FOREIGN KEY (respondida_por) REFERENCES usuarios (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Constancia de que cada persona recibió la información de la política de privacidad vigente.
+CREATE TABLE IF NOT EXISTS aceptaciones_privacidad (
+  id          INT NOT NULL AUTO_INCREMENT,
+  usuario_id  INT NOT NULL,
+  version     VARCHAR(20) NOT NULL,
+  aceptada_en DATETIME NOT NULL,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_aceptacion (usuario_id, version),
+  CONSTRAINT fk_acep_usuario FOREIGN KEY (usuario_id) REFERENCES usuarios (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

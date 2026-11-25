@@ -31,6 +31,13 @@ define('MINUTOS_INACTIVIDAD', (int) (isset($configuracion['minutos_inactividad']
 define('FORMATO_DIIO', isset($configuracion['formato_diio']) && is_string($configuracion['formato_diio']) ? trim($configuracion['formato_diio']) : '');
 define('CLAVE_HUELLA_CONFIG', isset($configuracion['clave_huella']) && is_string($configuracion['clave_huella']) ? $configuracion['clave_huella'] : '');
 define('DIAS_SESION_APP', (int) (isset($configuracion['dias_sesion_app']) ? $configuracion['dias_sesion_app'] : 30));
+// Avisos de errores del servidor (src/alertas.php) y carpeta donde se anotan.
+define('CONFIG_ALERTAS', isset($configuracion['alertas']) && is_array($configuracion['alertas']) ? $configuracion['alertas'] : array());
+define('CARPETA_DATOS', isset($configuracion['carpeta_datos']) && is_string($configuracion['carpeta_datos']) ? $configuracion['carpeta_datos'] : RAIZ_APP . '/datos');
+// Ley 21.719: quién responde por los datos y cuánto se guardan (src/privacidad.php).
+define('CONFIG_PRIVACIDAD', isset($configuracion['privacidad']) && is_array($configuracion['privacidad']) ? $configuracion['privacidad'] : array());
+require_once __DIR__ . '/alertas.php';
+activar_alertas_de_errores();
 
 define('CONFIG_BD', array_merge(
     array(
@@ -187,6 +194,7 @@ function mostrar_aviso_servidor(array $mensajes, $titulo = 'Falta configurar el 
  */
 set_exception_handler(function ($error) {
     error_log('[ganaderia] ' . $error);
+    registrar_error_servidor('ERROR', get_class($error), $error->getMessage(), $error->getFile(), $error->getLine());
     if (PHP_SAPI === 'cli') {
         fwrite(STDERR, (string) $error . PHP_EOL);
         exit(1);

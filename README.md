@@ -188,6 +188,14 @@ recetas con descuento de bodega, «Por reponer», y cierre de lote con margen ne
 | **Exportación con filtros** | **Exportar**: inventario filtrable por categoría, sexo, etapa, corral, raza, fecha de nacimiento, peso, estado y resguardo, con atajos («Terneros nacidos en los últimos 30 días», «Aptos para venta»…); los demás listados por rango de fechas. Vista previa con el conteo, y descarga en **Excel (.xlsx)**, PDF o CSV. El Excel se arma sin librerías (`src/xlsx.php`). |
 | **Lectura del DIIO sin tipeo** | `app/lector.js`, en la web y en la app de terreno: botón **Cámara** (código de barras/QR y, donde el navegador lo trae, OCR del número impreso con confirmación) y botón **Bastón RFID** por Bluetooth (puerto serie BLE). Los bastones en modo teclado escriben solos en el campo. Requiere Chrome o Edge y HTTPS; en iPhone, solo el bastón en modo teclado. |
 
+### v1.5.0 — Producción: privacidad, alertas y salidas desde terreno
+
+| Mejora | Dónde |
+|---|---|
+| **Salida desde la app de terreno** | Tarea «Salida del predio» (solo para quien puede vender): se leen los DIIO uno por uno, el teléfono rechaza en el acto a los animales en resguardo o sin DIIO, y se cargan RUP de destino, transportista y patente. Funciona sin señal; el servidor vuelve a verificar el resguardo al sincronizar. El FMA y la planilla SIPEC se descargan en la web. |
+| **Ley 21.719 de datos personales** | Política pública en `/privacidad` (se muestra al ingresar, con constancia por versión), **Mis datos y privacidad** (descarga de los propios datos y solicitudes de rectificación, supresión, oposición, portabilidad y bloqueo), **Solicitudes de datos** para el administrador con plazo de respuesta, anonimización al suprimir, y borrado automático de IP de la bitácora. Detalle y obligaciones del responsable en [docs/ley-21719.md](docs/ley-21719.md). |
+| **Aviso automático de errores** | `src/alertas.php`: excepciones, errores fatales, caída de la base y fallas de sincronización quedan en `datos/errores.log` y se avisan por correo del hosting, Telegram o webhook (una vez por hora por error, con datos personales enmascarados). Pantalla **Errores del servidor**, aviso en el Panel y `/salud` para un monitor externo. |
+
 ## Estructura
 
 ```
@@ -218,6 +226,8 @@ php/
     ├── exportacion.php    Listados exportables y sus filtros
     ├── salidas.php        Venta, faena y traslado con bloqueo sanitario
     ├── documentos_sag.php Borrador de FMA y planilla para SIPEC Web
+    ├── alertas.php        Registro y aviso automático de errores del servidor
+    ├── privacidad.php     Ley 21.719: política, derechos, supresión y retención
     └── paginas/           Una por sección del menú, la ficha del animal, los
                            predios, la bitácora y las exportaciones
 ```
@@ -299,7 +309,12 @@ sembrado y las propias pruebas respondan 403.
 ## Lo que falta
 
 - Recuperar la contraseña por correo: hoy la reinicia un administrador y entrega
-  una temporal en mano.
+  una temporal en mano. Queda para cuando se conecte el envío de correos.
+- Validar en terreno con hardware y datos reales: bastón RFID, formato de las
+  caravanas (DIIO), plantilla vigente de SIPEC Web y parámetros de consumo de las
+  raciones con el veterinario.
+- Revisión legal de la política de privacidad y, si se ofrece a otros
+  productores, contrato de encargo de tratamiento (ver docs/ley-21719.md).
 - Firma o sello de tiempo en las exportaciones, si alguna vez se usan como
   respaldo formal ante el SAG.
 - Envío de los listados por correo desde el sistema.

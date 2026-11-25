@@ -1,14 +1,18 @@
-# Lista de subida a cPanel: versión 3.1 (MVA, RUP y DIIO)
+# Lista de subida a cPanel: versión 3.2 (salidas, FMA, privacidad y alertas)
 
-Para subir la rama `ccr-144deddf-vtc7cn` sobre una instalación que ya funciona.
-Los pasos de instalación desde cero están en [INSTALAR-CPANEL.md](../INSTALAR-CPANEL.md).
+Para subir la rama `main` sobre una instalación que ya funciona, o para la primera
+puesta en producción. Los pasos de instalación desde cero están en
+[INSTALAR-CPANEL.md](../INSTALAR-CPANEL.md).
+
+Esta lista cubre v1.1 a v1.5 del repositorio (en pantalla, versión 3.2): MVA, RUP y
+DIIO; salidas con bloqueo sanitario, FMA y SIPEC; raciones calculadas; filtros y
+Excel; lector de DIIO; Ley 21.719; avisos de errores.
 
 **Fecha:** ____ · **Quién sube:** ____
 
 ## Antes de subir
 
 - [ ] `php pruebas/correr.php` termina en «0 fallas» en tu computador.
-- [ ] El pull request está revisado y aprobado.
 - [ ] **Respaldo de la base:** cPanel → phpMyAdmin → la base `…_ganaderia` →
       **Exportar** → rápido, SQL. Guardar el archivo fuera del servidor.
 - [ ] **Respaldo de archivos:** descargar `config.php` y la carpeta `datos/`
@@ -18,61 +22,75 @@ Los pasos de instalación desde cero están en [INSTALAR-CPANEL.md](../INSTALAR-
 
 ## Prueba en una copia con MySQL (obligatoria la primera vez)
 
-Esta versión cambia la base sola en la primera visita. Hasta ahora eso **solo se
-probó con SQLite**: hay que verlo una vez con MySQL antes de tocar producción.
+La base se actualiza sola en la primera visita. Las pruebas automáticas corren con
+SQLite: hay que verlo una vez con MySQL antes de tocar producción.
 
-- [ ] Crear una base de prueba en cPanel e importarle el respaldo de producción.
+- [ ] Crear una base de prueba en cPanel e importarle el respaldo de producción
+      (o dejarla vacía si es la primera instalación).
 - [ ] Subir la versión nueva a una carpeta aparte (por ejemplo `public_html/prueba`)
       con un `config.php` que apunte a la base de prueba y `'demo' => false`.
 - [ ] Abrir el sitio una vez. En phpMyAdmin, sobre la base de prueba, confirmar:
-  - [ ] Existe la tabla `migraciones`, con 6 filas: `fecha-secado`, `anulacion`,
-        `tablas-nuevas`, `mva-columnas`, `rup-normalizado`, `diio-normalizado`.
+  - [ ] La tabla `migraciones` tiene 8 filas: `fecha-secado`, `anulacion`,
+        `tablas-nuevas`, `mva-columnas`, `rup-normalizado`, `diio-normalizado`,
+        `salidas`, `privacidad`.
+  - [ ] Existen las tablas `salidas`, `detalles_salida`, `solicitudes_datos` y
+        `aceptaciones_privacidad`.
   - [ ] `tratamientos` tiene `validado_por`, `validado_en`, `validado_mva_rut`,
-        `validado_mva_numero` y `huella`.
-  - [ ] `membresias` tiene `mva_rut`, `mva_numero` y `mva_vigente_hasta`.
-  - [ ] En **Estructura → Vista de relaciones** de `tratamientos` aparece
-        `fk_trat_validador` hacia `usuarios`.
-  - [ ] Los RUP de `establecimientos` quedaron como `09.1.01.0001`. Los que no
-        tienen 9 dígitos quedan como estaban: revisalos a mano.
-  - [ ] Los DIIO de `animales.caravana_visual` quedaron sin espacios y en
-        mayúsculas. Si alguno quedó con espacios es porque chocaba con otro
-        animal: revisalo.
-- [ ] Recorrer en la copia: Predios (editar uno), Usuarios (cargar un registro
-      MVA a un veterinario de prueba), Sanidad (validar un tratamiento) y la app
-      de terreno (tarea «Validar tratamientos»).
-- [ ] En phpMyAdmin, correr `EXPLAIN` sobre la consulta de pendientes de la app
-      (`validaciones_app` en `src/operaciones.php`) y confirmar que usa
-      `idx_trat_fecha`.
+        `validado_mva_numero` y `huella`; `membresias` tiene `mva_rut`,
+        `mva_numero` y `mva_vigente_hasta`.
+  - [ ] Los RUP de `establecimientos` quedaron como `09.1.01.0001` y los DIIO sin
+        espacios y en mayúsculas.
+- [ ] Recorrer en la copia:
+  - [ ] Al ingresar aparece la **política de privacidad**; aceptarla.
+  - [ ] **Salidas y FMA**: registrar una venta de prueba, descargar el FMA (PDF) y
+        la planilla SIPEC (Excel) y abrir los dos.
+  - [ ] **Exportar** → Inventario con un filtro → Excel, PDF y CSV.
+  - [ ] **Alimentación**: aparece «Ración calculada por corral».
+  - [ ] **Mis datos y privacidad**: descargar mis datos y hacer una solicitud;
+        responderla en **Solicitudes de datos**.
+  - [ ] **Errores del servidor** abre sin problemas.
 - [ ] Borrar la carpeta y la base de prueba.
 
 ## Subida
 
 - [ ] Subir el zip a la carpeta del sistema y extraerlo encima.
 - [ ] **No** reemplazar `config.php` ni borrar `datos/`.
-- [ ] En `config.php` agregar, si no están:
+- [ ] En `config.php` (ver `config.ejemplo.php` para el detalle de cada clave):
+  - [ ] `'demo' => false` y la base `'motor' => 'mysql'` con sus datos.
+  - [ ] `'gestion_avanzada' => true` si se usan sanidad, bodega, MVA y resguardo.
   - [ ] `'formato_diio' => ''`: dejarlo **vacío** hasta comparar con caravanas reales.
   - [ ] `'clave_huella' => ''`: vacío está bien; se crea `datos/clave-huella.php`.
+  - [ ] `'alertas'`: al menos un canal (correo del dominio o Telegram).
+  - [ ] `'privacidad'`: el `correo_contacto` para que las personas ejerzan sus derechos.
 - [ ] Abrir el sitio: la base se actualiza sola en esa primera visita.
 - [ ] Si aparece «Falta configurar el servidor», leer qué dice y corregir `config.php`.
 
 ## Después de subir
 
-- [ ] Ingresar como administrador y abrir Predios, Usuarios y Sanidad.
+- [ ] **HTTPS activo** (cPanel → SSL/TLS Status → Run AutoSSL). Sin HTTPS no
+      funcionan la app de terreno, la cámara ni el bastón RFID.
+- [ ] Ingresar como administrador y aceptar la política de privacidad.
+- [ ] **Errores del servidor → Enviar un aviso de prueba**: confirmar que llega.
+- [ ] Crear un monitor en **UptimeRobot** (gratis) hacia `https://TU-DOMINIO/salud`
+      cada 5 minutos, con aviso al mismo correo o Telegram.
+- [ ] **Respaldo diario automático:** cPanel → **Cron Jobs**, una vez por día:
+      `mysqldump --single-transaction -u USUARIO -p'CLAVE' BASE | gzip > ~/respaldos/ganaderia-$(date +\%F).sql.gz`
+      (crear antes la carpeta `~/respaldos`, fuera de `public_html`), y bajar una
+      copia fuera del servidor cada semana.
 - [ ] En **Usuarios → Registro MVA**, cargar el RUT, el número y la vigencia de
       cada veterinario real. Lo carga otro administrador, nunca la misma persona.
-- [ ] Validar un tratamiento con un veterinario y confirmar que aparece «Validado».
-- [ ] Confirmar que existe `datos/clave-huella.php` (aparece con la primera
-      validación) y **agregarlo a los respaldos** junto con la base.
+- [ ] En **Predios**, confirmar que cada predio tiene su RUP (sin RUP no se
+      pueden registrar salidas).
 - [ ] En cada teléfono: abrir la app con señal para que tome la versión nueva
-      (`terreno-2.5.0`). Si muestra datos viejos, **Cerrar sesión** y volver a ingresar.
-- [ ] Revisar **Errors** de cPanel durante la primera hora.
+      (`terreno-2.7.0`). Si muestra datos viejos, **Cerrar sesión** y volver a ingresar.
+- [ ] Revisar **Errores del servidor** y **Errors** de cPanel durante la primera hora.
 
 ## Volver atrás si algo sale mal
 
-Las columnas nuevas aceptan vacío y la versión anterior las ignora, así que basta
-con volver al código anterior. Volver atrás si pasa cualquiera de estas cosas:
+Las tablas y columnas nuevas no molestan a la versión anterior, así que basta con
+volver al código anterior. Volver atrás si pasa cualquiera de estas cosas:
 
-- El sitio muestra «Algo salió mal» en Predios, Usuarios o Sanidad.
+- El sitio muestra «Algo salió mal» en el Panel, Salidas, Exportar o Usuarios.
 - La app de terreno no logra sincronizar.
 - Los tratamientos validados aparecen como «Alterado» sin que nadie los haya cambiado.
 

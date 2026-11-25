@@ -249,6 +249,7 @@ $cuentas = [
 
     <div class="credito-ingreso">
       Gestión ganadera <?= VERSION_APP ?>. Proyecto de título, <?= date('Y') ?>.
+      · <a href="<?= h(url('/privacidad')) ?>">Política de privacidad</a>
     </div>
   </form>
   <?php endif; ?>

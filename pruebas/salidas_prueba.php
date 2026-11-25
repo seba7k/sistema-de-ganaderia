@@ -134,3 +134,32 @@ prueba('el Excel guarda como texto lo que parece número (DIIO con ceros)', func
     afirmar(str_contains($hoja, 't="inlineStr"><is><t xml:space="preserve">000123</t>'), 'el DIIO no quedó como texto');
     afirmar(str_contains($hoja, '<v>450.5</v>'), 'el peso no quedó como número');
 });
+
+prueba('desde la app: el administrador ve la tarea y registra la salida tal como la manda el teléfono', function () use ($org, $animal_libre): void {
+    afirmar(in_array('SALIDA', operaciones_del_rol('ADMINISTRADOR'), true), 'el admin no tiene la tarea');
+    afirmar(!in_array('SALIDA', operaciones_del_rol('OPERARIO'), true), 'el operario no debería tenerla');
+    $animal = $animal_libre();
+    // Igual que app.js: RUP solo con dígitos y la patente ya limpia.
+    $r = sincronizar_como('admin@ganaderia.cl', $org, ['uuid' => '22222222-3333-4444-8555-666666666666', 'tipo' => 'SALIDA', 'datos' => [
+        'tipo' => 'FAENA', 'fecha' => hoy(), 'identificaciones' => [$animal['caravana_visual']],
+        'destino_rup' => '081020044', 'destino_nombre' => 'Frigorífico', 'comprador' => '', 'transportista' => 'Pedro', 'patente' => 'ABCD12',
+    ]]);
+    afirmar_igual('OK', $r['estado'], 'estado: ' . ($r['mensaje'] ?? ''));
+    afirmar_igual('FAENADO', valor('SELECT estado FROM animales WHERE id = ?', [$animal['id']]), 'estado del animal');
+    // El reintento por señal cortada no duplica.
+    $otra = sincronizar_como('admin@ganaderia.cl', $org, ['uuid' => '22222222-3333-4444-8555-666666666666', 'tipo' => 'SALIDA', 'datos' => []]);
+    afirmar_igual('DUPLICADA', $otra['estado'], 'reintento');
+});
+
+prueba('desde la app: un animal en resguardo se rechaza aunque el teléfono no lo supiera', function () use ($org): void {
+    $tratado = fila(
+        "SELECT a.* FROM animales a JOIN aplicaciones_tratamiento ap ON ap.animal_id = a.id JOIN tratamientos t ON t.id = ap.tratamiento_id
+          WHERE t.fecha = ? AND a.estado = 'ACTIVO' LIMIT 1",
+        [hoy()],
+    );
+    $r = sincronizar_como('admin@ganaderia.cl', $org, ['uuid' => '33333333-4444-4555-8666-777777777777', 'tipo' => 'SALIDA', 'datos' => [
+        'tipo' => 'VENTA', 'fecha' => hoy(), 'identificaciones' => [$tratado['caravana_visual']], 'destino_rup' => '081020044',
+    ]]);
+    afirmar_igual('RECHAZADA', $r['estado'], 'estado');
+    afirmar(str_contains($r['mensaje'], 'resguardo'), $r['mensaje']);
+});

@@ -76,11 +76,29 @@ if ($pendientes) {
 require __DIR__ . '/src/auth.php';
 require __DIR__ . '/src/formato.php';
 
+/* Chequeo de salud para un monitor externo (UptimeRobot u otro): si el servidor
+   entero se cae, el sistema no puede avisar por sí mismo; el monitor sí. No pide
+   sesión ni muestra nada interno: solo si el sitio y la base responden. */
+if ($ruta === '/salud') {
+    header('Content-Type: application/json; charset=utf-8');
+    header('Cache-Control: no-store');
+    try {
+        db()->query('SELECT 1');
+        echo json_encode(array('estado' => 'ok'));
+    } catch (Throwable $error) {
+        registrar_error_servidor('CRITICO', 'Base de datos sin conexión', $error->getMessage(), $error->getFile(), $error->getLine());
+        http_response_code(503);
+        echo json_encode(array('estado' => 'sin_base'));
+    }
+    exit;
+}
+
 // Abre la base y, si es la primera visita, crea las tablas.
 try {
     db();
 } catch (PDOException $error) {
     error_log('[ganaderia] base de datos: ' . $error->getMessage());
+    registrar_error_servidor('CRITICO', 'Base de datos sin conexión', $error->getMessage(), $error->getFile(), $error->getLine());
     $mensaje = motor_bd() === 'mysql'
         ? 'No se pudo conectar a la base MySQL. Revisá en config.php el nombre de la base, el usuario y la clave, '
           . 'y que en cPanel el usuario esté agregado a la base con «Todos los privilegios».'
@@ -149,14 +167,35 @@ if (isset($_SERVER['CONTENT_LENGTH']) && (int) $_SERVER['CONTENT_LENGTH'] > 4000
 
 /* Rutas abiertas: el resto exige sesión. Se declara así, y no al revés, porque
    olvidarse de proteger una página es un error silencioso. */
-$rutas_abiertas = array('/ingresar', '/salir');
+// La política de privacidad es pública: se lee antes de ingresar (Ley 21.719).
+$rutas_abiertas = array('/ingresar', '/salir', '/privacidad');
 
 if (!hay_sesion() && !in_array($ruta, $rutas_abiertas, true)) {
     header('Location: ' . url('/ingresar'));
     exit;
 }
 
+require_once __DIR__ . '/src/privacidad.php';
+
+// Plazos de conservación (IP de la bitácora, sesiones vencidas): una vez por día.
+try {
+    aplicar_retencion();
+} catch (Throwable $error) {
+    registrar_error_servidor('ERROR', 'Retención de datos', $error->getMessage(), $error->getFile(), $error->getLine());
+}
+
+/* Quien todavía no recibió la versión vigente de la política la ve antes de
+   seguir. Se deja pasar a lo imprescindible: la política, sus datos y salir. */
+if (hay_sesion() && !in_array($ruta, array('/privacidad', '/mis-datos', '/salir', '/mantener-sesion', '/predio'), true)
+    && privacidad_pendiente((int) usuario_actual()['id'])) {
+    header('Location: ' . url('/privacidad'));
+    exit;
+}
+
 $paginas = array(
+    '/privacidad'   => 'privacidad',
+    '/mis-datos'    => 'mis-datos',
+    '/solicitudes-datos' => 'solicitudes-datos',
     '/'             => 'panel',
     '/hacienda'     => 'hacienda',
     '/corrales'     => 'corrales',
@@ -171,6 +210,7 @@ $paginas = array(
     '/bitacora'     => 'bitacora',
     '/exportar'     => 'exportar',
     '/salidas'      => 'salidas',
+    '/errores'      => 'errores',
 );
 
 // Sin gestión avanzada, esas pantallas no existen: el sistema queda en el ciclo

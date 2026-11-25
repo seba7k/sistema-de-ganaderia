@@ -5,7 +5,7 @@ require_once __DIR__ . '/../auth.php';
 require_once __DIR__ . '/../formato.php';
 require_once __DIR__ . '/../formulario.php';
 
-const VERSION_APP = '3.1';
+const VERSION_APP = '3.2';
 
 /**
  * Íconos de trazo. Reemplazan a los emojis, que cambian de dibujo y de tamaño
@@ -26,6 +26,8 @@ function icono(string $nombre): string
         'insumos'      => '<path d="M21 8 12 3 3 8v8l9 5 9-5z"/><path d="m3 8 9 5 9-5"/><path d="M12 13v8"/>',
         'usuarios'     => '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.9"/><path d="M16 3.1a4 4 0 0 1 0 7.8"/>',
         'predios'      => '<path d="M3 21h18"/><path d="M5 21V9l7-5 7 5v12"/><path d="M10 21v-6h4v6"/>',
+        'errores'      => '<path d="M12 3 2 21h20L12 3z"/><path d="M12 10v5"/><path d="M12 18h.01"/>',
+        'privacidad'   => '<path d="M12 3 4 6v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V6l-8-3z"/><path d="m9 12 2 2 4-4"/>',
         'bitacora'     => '<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/><path d="M9 7h7"/><path d="M9 11h7"/>',
         'app'          => '<rect x="6" y="2" width="12" height="20" rx="2.5"/><path d="M11 18h2"/>',
         'ayuda'        => '<circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 0 1 4.9.8c0 1.7-2.4 2.2-2.4 3.7"/><path d="M12 17h.01"/>',
@@ -130,6 +132,21 @@ function modulos(): array
                 'ruta' => '/usuarios', 'icono' => icono('usuarios'), 'color' => '#475569', 'nombre' => 'Usuarios',
                 'detalle' => 'Personas con acceso y sus roles',
                 'permiso' => 'gestionar_usuarios', 'rapido' => false,
+            ],
+            [
+                'ruta' => '/solicitudes-datos', 'icono' => icono('privacidad'), 'color' => '#334155', 'nombre' => 'Solicitudes de datos',
+                'detalle' => 'Pedidos de acceso, corrección o supresión de datos personales',
+                'permiso' => 'gestionar_usuarios', 'rapido' => false,
+            ],
+            [
+                'ruta' => '/mis-datos', 'icono' => icono('privacidad'), 'color' => '#334155', 'nombre' => 'Mis datos y privacidad',
+                'detalle' => 'Tus datos, la política de privacidad y tus derechos',
+                'permiso' => 'ver_mis_datos', 'rapido' => false,
+            ],
+            [
+                'ruta' => '/errores', 'icono' => icono('errores'), 'color' => '#9f1d1d', 'nombre' => 'Errores del servidor',
+                'detalle' => 'Qué falló y a quién se avisa automáticamente',
+                'permiso' => 'ver_errores', 'rapido' => false,
             ],
             [
                 'ruta' => '/app/', 'icono' => icono('app'), 'color' => '#0f2417', 'nombre' => 'App de terreno',

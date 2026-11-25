@@ -87,4 +87,46 @@ return [
     // false si el hosting no tiene mod_rewrite: las direcciones pasan de
     // /hacienda a index.php?r=/hacienda, y el sistema sigue funcionando igual.
     'url_amigables' => true,
+
+    /*
+     * Aviso automático de errores del servidor.
+     *
+     * Cuando algo falla (un error de PHP, la base que no responde, la app que no
+     * logra sincronizar), el sistema lo anota en datos/errores.log y avisa por
+     * los canales que tengan datos. Vacíos: solo se anota y se ve en
+     * Gestión → Errores del servidor. El mismo error se avisa una vez por hora.
+     *
+     *  · correo: usa el correo del propio hosting (cPanel), no necesita Google.
+     *    Conviene una casilla del mismo dominio para que no caiga en spam.
+     *  · telegram: crear un bot con @BotFather (da el token) y mandarle un
+     *    mensaje; el chat_id se ve en https://api.telegram.org/bot<TOKEN>/getUpdates
+     *  · webhook: una URL https que reciba JSON (Slack, Discord, Make, etc.).
+     *
+     * Para cuando se cae el servidor entero (ahí nadie puede avisar desde
+     * adentro): un monitor externo gratuito, como UptimeRobot, que revise
+     * https://TU-DOMINIO/salud cada 5 minutos.
+     */
+    'alertas' => [
+        'correo'         => '',
+        'telegram_token' => '',
+        'telegram_chat'  => '',
+        'webhook'        => '',
+        'nombre_sitio'   => 'Gestión ganadera',
+    ],
+
+    /*
+     * Protección de datos personales (Ley 21.719).
+     *
+     * El sistema publica la política en /privacidad, pide a cada persona que la
+     * lea al ingresar, y deja que cada uno descargue sus datos y haga
+     * solicitudes en «Mis datos y privacidad». Ver docs/ley-21719.md.
+     */
+    'privacidad' => [
+        // Correo para ejercer derechos. Vacío: se muestra el del administrador.
+        'correo_contacto'  => '',
+        // Días corridos para responder una solicitud. Confirmá el plazo vigente con tu asesor legal.
+        'dias_respuesta'   => 30,
+        // Días que se guarda la IP de cada acción en la bitácora.
+        'dias_ip_bitacora' => 180,
+    ],
 ];

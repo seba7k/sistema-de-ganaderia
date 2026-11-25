@@ -88,6 +88,11 @@
     campo.focus();
     sonar();
     avisar('Leído: ' + numero);
+    // En el buscador de la app de terreno, leer equivale a apretar Enter: busca
+    // el animal y sigue, sin tocar la pantalla (útil en la manga con guantes).
+    if (campo.matches('[data-buscar]') && campo.form && campo.form.requestSubmit) {
+      campo.form.requestSubmit();
+    }
   }
 
   /* ---------- Avisos: sonido, vibración y un cartel breve ---------- */

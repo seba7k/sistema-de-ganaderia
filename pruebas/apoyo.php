@@ -18,12 +18,18 @@ function configurar_pruebas(string $formato_diio = ''): void
             unlink($viejo);
         }
     }
-    register_shutdown_function(static function () use ($archivo): void {
+    // Carpeta propia para el registro de errores: las pruebas no tocan datos/.
+    $carpeta = sys_get_temp_dir() . '/ganaderia-pruebas-datos-' . getmypid();
+    register_shutdown_function(static function () use ($archivo, $carpeta): void {
         foreach ([$archivo, $archivo . '-journal', $archivo . '.lock'] as $resto) {
             if (is_file($resto)) {
                 @unlink($resto);
             }
         }
+        foreach (glob($carpeta . '/*') ?: [] as $resto) {
+            @unlink($resto);
+        }
+        @rmdir($carpeta);
     });
 
     define('CONFIG_FORZADA', [
@@ -33,8 +39,13 @@ function configurar_pruebas(string $formato_diio = ''): void
         'formato_diio'     => $formato_diio,
         'clave_huella'     => 'clave-de-prueba-no-usar-en-produccion',
         'zona_horaria'     => 'America/Santiago',
+        'carpeta_datos'    => $carpeta,
+        'alertas'          => ['correo' => 'alertas@ejemplo.cl', 'nombre_sitio' => 'pruebas'],
     ]);
     define('FORZAR_DATOS_DEMO', true);
+    // Los avisos no salen a internet: se anotan en $GLOBALS['alertas_enviadas'].
+    define('ALERTAS_SIMULADAS', true);
+    $GLOBALS['alertas_enviadas'] = [];
 
     require_once __DIR__ . '/../src/auth.php';
     require_once __DIR__ . '/../src/operaciones.php';

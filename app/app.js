@@ -36,6 +36,7 @@
     nota: svg('<path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><path d="M18.5 2.5a2.1 2.1 0 0 1 3 3L14 13l-4 1 1-4z"/>'),
     animal: svg('<circle cx="12" cy="12" r="9"/><path d="M12 8v8"/><path d="M8 12h8"/>'),
     validar: svg('<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/>'),
+    salida: svg('<path d="M3 12h13"/><path d="m12 7 5 5-5 5"/><path d="M20 4v16"/>'),
   };
 
   const OPERACIONES = {
@@ -47,6 +48,7 @@
     SECADO:      { icono: ICONOS.secado, titulo: 'Secado', detalle: 'Fin de la lactancia, en lechería' },
     NOTA:        { icono: ICONOS.nota, titulo: 'Nota', detalle: 'Anotar lo que le pasó al animal' },
     ANIMAL:      { icono: ICONOS.animal, titulo: 'Alta de animal', detalle: 'Uno comprado o que faltaba cargar' },
+    SALIDA:      { icono: ICONOS.salida, titulo: 'Salida del predio', detalle: 'Venta, faena o traslado, con bloqueo sanitario', guardado: 'Salida guardada' },
     VALIDACION:  { icono: ICONOS.validar, titulo: 'Validar tratamientos', detalle: 'Firma del médico veterinario autorizado', enCola: 'Validación MVA', guardado: 'Validación guardada' },
   };
 
@@ -358,7 +360,7 @@
     const titulos = {
       identificar: {
         PESADA: 'Pesaje', PARTO: 'Parto', TRATAMIENTO: 'Tratamiento', TRASLADO: 'Traslado',
-        ENTREGA: 'Alimentación individual', SECADO: 'Secado', NOTA: 'Nota',
+        ENTREGA: 'Alimentación individual', SECADO: 'Secado', NOTA: 'Nota', SALIDA: 'Salida del predio',
       }[estado.ctx.tipo],
       pesaje: 'Pesaje',
       parto: 'Parto',
@@ -369,6 +371,7 @@
       'corrales-tratamiento': 'Tratamiento por corral',
       alimentacion: 'Alimentación',
       destino: 'Traslado',
+      salida: 'Salida del predio',
       pendientes: 'Envíos',
       validar: 'Validar tratamientos',
     };
@@ -512,7 +515,8 @@
 
     identificar() {
       const { tipo, lista = [] } = estado.ctx;
-      const pregunta = { PARTO: '¿Qué vaca parió?', TRASLADO: 'Leé los animales a mover' }[tipo] || '¿Qué animal?';
+      const pregunta = { PARTO: '¿Qué vaca parió?', TRASLADO: 'Leé los animales a mover', SALIDA: 'Leé los animales que salen del predio' }[tipo] || '¿Qué animal?';
+      const salida = tipo === 'SALIDA';
       return '<main class="pantalla">'
         + '<form data-envio="identificar" autocomplete="off">'
         + '<label for="ident">' + pregunta + '</label>'
@@ -520,8 +524,8 @@
         + '<p class="nota">Con lector de chip (EID) el número entra solo al acercarlo.</p>'
         + '</form>'
         + '<div id="resultados" class="resultados" aria-live="polite"></div>'
-        + (tipo === 'TRASLADO'
-          ? '<section class="lista-traslado"><h2>Para mover (' + lista.length + ')</h2>'
+        + (tipo === 'TRASLADO' || salida
+          ? '<section class="lista-traslado"><h2>' + (salida ? 'Salen' : 'Para mover') + ' (' + lista.length + ')</h2>'
             + (lista.length
               ? '<ul>' + lista.map((id) => {
                 const a = animalPorId(id);
@@ -529,7 +533,10 @@
                   + '<button type="button" class="quitar" data-accion="quitar-lista" data-id="' + id + '" aria-label="Quitar ' + esc(nombreAnimal(a)) + '">✕</button></li>';
               }).join('') + '</ul>'
               : '<p class="nota">Todavía no agregaste animales.</p>')
-            + '<button type="button" class="boton principal" data-accion="elegir-destino"' + (lista.length ? '' : ' disabled') + '>Elegir corral de destino</button></section>'
+            + (salida
+              ? '<p class="nota">Los animales en período de resguardo no se pueden agregar: el sistema los bloquea para venta, faena y traslado.</p>'
+                + '<button type="button" class="boton principal" data-accion="datos-salida"' + (lista.length ? '' : ' disabled') + '>Datos del destino</button></section>'
+              : '<button type="button" class="boton principal" data-accion="elegir-destino"' + (lista.length ? '' : ' disabled') + '>Elegir corral de destino</button></section>')
           : '')
         + (tipo === 'TRATAMIENTO' ? '<button type="button" class="boton" data-accion="corral-completo">Tratar un corral completo</button>' : '')
         + '</main>';
@@ -668,6 +675,29 @@
         }).join('') + '</div></main>';
     },
 
+    salida() {
+      const { lista = [], tipo_salida = 'VENTA' } = estado.ctx;
+      const animales = lista.map(animalPorId).filter(Boolean);
+      return '<main class="pantalla">'
+        + '<p class="nota">' + animales.length + ' animal(es): ' + esc(animales.map(nombreAnimal).join(', ')) + '</p>'
+        + '<form data-envio="salida" autocomplete="off">'
+        + '<label>Tipo de salida</label>'
+        + chips('tipo_salida', [['VENTA', 'Venta'], ['FAENA', 'Faena'], ['TRASLADO', 'Traslado']], tipo_salida)
+        + '<label for="rup">RUP de destino</label>'
+        + '<input id="rup" name="rup" class="entrada-grande" inputmode="numeric" autocomplete="off" placeholder="Ej: 08.1.02.0044" required>'
+        + '<label for="destino">Predio o planta de destino</label>'
+        + '<input id="destino" name="destino" class="entrada" placeholder="Ej: Frigorífico Temuco">'
+        + '<label for="comprador">Comprador</label>'
+        + '<input id="comprador" name="comprador" class="entrada" placeholder="Vacío en un traslado propio">'
+        + '<label for="transportista">Transportista</label>'
+        + '<input id="transportista" name="transportista" class="entrada">'
+        + '<label for="patente">Patente del camión</label>'
+        + '<input id="patente" name="patente" class="entrada" autocapitalize="characters" placeholder="Ej: ABCD12">'
+        + '<button class="boton principal" type="submit">Registrar salida</button>'
+        + '<p class="nota">El borrador del FMA y la planilla para SIPEC se descargan en la web, en «Salidas y FMA».</p>'
+        + '</form></main>';
+    },
+
     validar() {
       const mva = estado.catalogo.mva;
       const vigente = mvaVigente();
@@ -749,6 +779,21 @@
 
     if (tipo === 'TRASLADO') {
       const lista = estado.ctx.lista || [];
+      if (lista.includes(id)) aviso(nombreAnimal(animal) + ' ya está en la lista.', 'error');
+      return mostrar('identificar', { tipo, lista: lista.includes(id) ? lista : [...lista, id] });
+    }
+    if (tipo === 'SALIDA') {
+      const lista = estado.ctx.lista || [];
+      // Bloqueo sanitario en el teléfono, igual que en el servidor: un animal en
+      // resguardo ni siquiera entra a la lista, aunque no haya señal.
+      if (animal.carencia_hasta && animal.carencia_hasta > hoy()) {
+        aviso(nombreAnimal(animal) + ' está en resguardo sanitario: puede salir desde el ' + fechaCorta(animal.carencia_hasta) + '.', 'error');
+        return mostrar('identificar', { tipo, lista });
+      }
+      if (!animal.diio) {
+        aviso(nombreAnimal(animal) + ' no tiene DIIO: sin la caravana oficial no puede salir del predio.', 'error');
+        return mostrar('identificar', { tipo, lista });
+      }
       if (lista.includes(id)) aviso(nombreAnimal(animal) + ' ya está en la lista.', 'error');
       return mostrar('identificar', { tipo, lista: lista.includes(id) ? lista : [...lista, id] });
     }
@@ -843,6 +888,7 @@
     },
     'quitar-lista': (el) => mostrar('identificar', { ...estado.ctx, lista: estado.ctx.lista.filter((id) => id !== Number(el.dataset.id)) }),
     'elegir-destino': () => mostrar('destino', { lista: estado.ctx.lista }),
+    'datos-salida': () => mostrar('salida', { lista: estado.ctx.lista, tipo_salida: 'VENTA' }),
     mover: (el) => guardarTraslado(Number(el.dataset.id)),
     'corral-completo': () => mostrar('corrales-tratamiento', { previo: estado.ctx.previo }),
     'tratar-corral': (el) => mostrar('tratamiento', { ...(estado.ctx.previo || {}), corral: corralPorId(Number(el.dataset.id)) }),
@@ -919,6 +965,39 @@
         }
         mostrar('ingreso', { email, error: error.message });
       }
+    },
+
+    salida(form) {
+      const { lista = [], tipo_salida = 'VENTA' } = estado.ctx;
+      const animales = lista.map(animalPorId).filter(Boolean);
+      const rup = form.rup.value.replace(/\D/g, '');
+      if (rup.length !== 9) return aviso('El RUP de destino tiene 9 dígitos (ej: 08.1.02.0044).', 'error');
+      const patente = form.patente.value.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+      if (patente && (patente.length < 5 || patente.length > 8)) return aviso('La patente no parece válida (ej: ABCD12).', 'error');
+      const tipos = { VENTA: 'Venta', FAENA: 'Faena', TRASLADO: 'Traslado' };
+      confirmar({
+        titulo: tipos[tipo_salida] + ' de ' + animales.length + ' animal(es)',
+        texto: 'Salen ' + animales.map(nombreAnimal).join(', ') + ' hacia el RUP ' + form.rup.value.trim() + '. Dejan el inventario de este predio.',
+        si: 'Registrar salida',
+        alConfirmar: async () => {
+          await registrar(
+            'SALIDA',
+            {
+              tipo: tipo_salida, fecha: hoy(), identificaciones: animales.map((a) => a.diio),
+              destino_rup: rup, destino_nombre: form.destino.value.trim(), comprador: form.comprador.value.trim(),
+              transportista: form.transportista.value.trim(), patente,
+            },
+            tipos[tipo_salida] + ' · ' + (animales.length === 1 ? nombreAnimal(animales[0]) : animales.length + ' animales') + ' → RUP ' + form.rup.value.trim(),
+            () => {
+              // Salen del inventario del teléfono; el catálogo siguiente confirma lo que hizo el servidor.
+              const ids = new Set(animales.map((a) => a.id));
+              animales.forEach((a) => { const c = corralPorId(a.corral_id); if (c) c.ocupacion -= 1; });
+              estado.catalogo.animales = estado.catalogo.animales.filter((a) => !ids.has(a.id));
+            },
+          );
+          mostrar('inicio');
+        },
+      });
     },
 
     identificar(form) {
