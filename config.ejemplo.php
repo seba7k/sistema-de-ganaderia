@@ -47,6 +47,19 @@ return [
 
     'demo' => true,
 
+    /*
+     * Formato del DIIO (la caravana oficial del SAG), como expresión regular.
+     *
+     * Vacío: se acepta cualquier DIIO, que es lo seguro mientras no se sepa
+     * exactamente cómo vienen impresas las caravanas del campo. Con un formato,
+     * el sistema rechaza los DIIO que no lo cumplan, en la web y en la app.
+     * Antes de activarlo, comparalo con caravanas reales: un formato equivocado
+     * deja animales sin poder cargarse.
+     *
+     * Ejemplo, solo números y de 9 dígitos: '/^\d{9}$/'
+     */
+    'formato_diio' => '',
+
     // La plataforma web cierra la sesión tras este tiempo sin actividad.
     'minutos_inactividad' => 60,
 

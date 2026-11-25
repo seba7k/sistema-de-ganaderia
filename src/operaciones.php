@@ -7,6 +7,7 @@ require_once __DIR__ . '/dominio/indicadores.php';
 require_once __DIR__ . '/dominio/retiros.php';
 require_once __DIR__ . '/dominio/reproduccion.php';
 require_once __DIR__ . '/dominio/mva.php';
+require_once __DIR__ . '/dominio/sag.php';
 
 /**
  * Operaciones de terreno.
@@ -167,9 +168,11 @@ function buscar_animal(
             $errores[$campo] = 'Falta identificar el animal.';
             return null;
         }
+        // El DIIO se compara tal cual y normalizado: los cargados antes de que
+        // se normalizaran pueden tener espacios o minúsculas.
         $animal = fila(
-            $consulta . ' AND (caravana_visual = ? OR numero_interno = ? OR eid = ?) LIMIT 1',
-            [$org, $identificacion, $identificacion, str_replace(' ', '', $identificacion)],
+            $consulta . ' AND (caravana_visual = ? OR caravana_visual = ? OR numero_interno = ? OR eid = ?) LIMIT 1',
+            [$org, $identificacion, normalizar_diio($identificacion), $identificacion, str_replace(' ', '', $identificacion)],
         );
     }
 
@@ -177,6 +180,12 @@ function buscar_animal(
         $errores[$campo] = $mensaje;
     }
     return $animal;
+}
+
+function mensaje_formato_diio(): string
+{
+    return 'Ese DIIO no tiene el formato de las caravanas oficiales configurado para este sistema. '
+        . 'Revisalo contra la caravana; si es un número propio del campo, cargalo como número interno.';
 }
 
 function nombre_animal(array $animal): string
@@ -388,7 +397,7 @@ function guardar_editar_animal(int $org, int $usuario_id, array $d): array
     }
 
     $nuevo = [
-        'caravana_visual'  => dato_texto($d, 'caravana_visual') !== '' ? dato_texto($d, 'caravana_visual') : null,
+        'caravana_visual'  => normalizar_diio(dato_texto($d, 'caravana_visual')) !== '' ? normalizar_diio(dato_texto($d, 'caravana_visual')) : null,
         'numero_interno'   => dato_texto($d, 'numero_interno') !== '' ? dato_texto($d, 'numero_interno') : null,
         'eid'              => str_replace(' ', '', dato_texto($d, 'eid')) !== '' ? str_replace(' ', '', dato_texto($d, 'eid')) : null,
         'sexo'             => dato_texto($d, 'sexo'),
@@ -407,6 +416,13 @@ function guardar_editar_animal(int $org, int $usuario_id, array $d): array
     }
     if ($nuevo['eid'] !== null && preg_match('/^\d{15}$/', $nuevo['eid']) !== 1) {
         $errores['eid'] = 'El EID del chip tiene 15 dígitos.';
+    }
+    /* Solo se exige el formato si el DIIO cambia: un animal cargado antes de
+       configurar el formato tiene que poder corregirse en otros datos sin que
+       su caravana, que es la que tiene puesta, lo bloquee. */
+    if ($nuevo['caravana_visual'] !== null && $nuevo['caravana_visual'] !== $animal['caravana_visual']
+        && !diio_con_formato($nuevo['caravana_visual'], FORMATO_DIIO)) {
+        $errores['caravana_visual'] = mensaje_formato_diio();
     }
 
     $validas = [
@@ -528,7 +544,7 @@ function guardar_alta_animal(int $org, int $usuario_id, array $d): array
 {
     $errores = [];
 
-    $caravana = dato_texto($d, 'caravana_visual');
+    $caravana = normalizar_diio(dato_texto($d, 'caravana_visual'));
     $interno = dato_texto($d, 'numero_interno');
     $eid = str_replace(' ', '', dato_texto($d, 'eid'));
 
@@ -537,6 +553,9 @@ function guardar_alta_animal(int $org, int $usuario_id, array $d): array
     }
     if ($eid !== '' && preg_match('/^\d{15}$/', $eid) !== 1) {
         $errores['eid'] = 'El EID del chip tiene 15 dígitos.';
+    }
+    if ($caravana !== '' && !diio_con_formato($caravana, FORMATO_DIIO)) {
+        $errores['caravana_visual'] = mensaje_formato_diio();
     }
 
     $sexo = dato_texto($d, 'sexo');
@@ -1749,6 +1768,8 @@ function catalogo_app(int $org): array
         'generado_en' => ahora(),
         'hoy'         => hoy(),
         'gdp_maxima'  => GDP_MAXIMA_NORMAL,
+        // Para que el alta en el teléfono distinga un DIIO de un número interno.
+        'formato_diio' => FORMATO_DIIO,
         'animales'    => $animales,
         'corrales'    => array_map(static fn (array $c): array => [
             'id' => (int) $c['id'], 'nombre' => $c['nombre'], 'tipo' => $c['tipo'],

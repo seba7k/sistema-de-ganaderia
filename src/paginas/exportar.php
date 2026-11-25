@@ -159,7 +159,9 @@ if ($formato === 'pdf') {
     pdf_descargar(
         pdf_listado([
             'titulo'      => $listado['nombre'],
+            // El RUP va en el encabezado: es con lo que el SAG identifica el predio.
             'subtitulo'   => usuario_actual()['organizacion'] . ' · ' . nombre_predio()
+                             . (($rup = valor('SELECT rup FROM establecimientos WHERE id = ? AND organizacion_id = ?', [predio_actual() ?? 0, $org])) !== null ? ' · RUP ' . $rup : '')
                              . ' · ' . count($filas) . ' registro(s)',
             'pie'         => 'Gestión ganadera · ' . $listado['descripcion'],
             'encabezados' => $listado['titulo'],

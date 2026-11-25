@@ -113,6 +113,16 @@ aunque lo fuercen.
 | App de terreno | ✔ | ✔ | ✔ |
 | Validar tratamientos (requiere registro MVA vigente) | ✔ | ✔ | — |
 
+**Identificadores del SAG.** El **RUP** de cada predio se guarda siempre como
+`09.1.01.0001` (se acepta con puntos, guiones o todo junto), no puede repetirse
+entre los predios del propietario y aparece en los PDF exportados. Cada predio se
+edita desde **Predios**, y el cambio queda en la bitácora. El **DIIO** se guarda
+sin espacios y en mayúsculas, y la búsqueda lo encuentra aunque se tipee con
+espacios. Su formato se puede exigir con `formato_diio` en `config.php` (una
+expresión regular, vacía por defecto): con formato configurado, la web rechaza
+un DIIO que no lo cumpla y la app de terreno da de alta como número interno lo
+que no tenga forma de DIIO. El EID del chip sigue exigiendo 15 dígitos.
+
 **Médico Veterinario Autorizado (MVA).** Con la gestión avanzada encendida, cada
 tratamiento queda *pendiente* hasta que lo valida un veterinario con registro
 MVA vigente (RUT, número y fecha de vigencia). El administrador carga ese
