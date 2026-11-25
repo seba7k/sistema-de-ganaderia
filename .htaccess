@@ -1,0 +1,51 @@
+# Gestión ganadera — Apache / LiteSpeed (cPanel)
+#
+# Funciona tanto en la raíz del dominio como en una subcarpeta de public_html.
+# No usa "Options": hay hostings que no lo permiten en .htaccess y responden
+# con error 500 a todo el sitio.
+
+DirectoryIndex index.php index.html
+
+# La app de terreno se instala desde el navegador: el manifiesto necesita su tipo.
+AddType application/manifest+json .webmanifest
+
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+
+    # Hay hostings que le quitan a PHP la cabecera Authorization: se la devolvemos,
+    # porque la app de terreno se identifica con ella.
+    RewriteCond %{HTTP:Authorization} .
+    RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+
+    # Código y datos internos: nunca se sirven por la web.
+    RewriteRule ^(src|datos|pruebas)(/.*)?$ - [F,L]
+    RewriteRule ^(seed\.php|config(\.local)?\.php|esquema\.[a-z]+\.sql|[^/]+\.md)$ - [F,L]
+
+    # Todo lo que no sea un archivo o carpeta real va al front controller.
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteRule ^ index.php [QSA,L]
+</IfModule>
+
+# Respaldo por si el hosting no tiene mod_rewrite: lo sensible sigue bloqueado.
+<FilesMatch "\.(sqlite|sqlite3|sqlite-journal|db|sql|md|log|lock|sh|ini|bak)$|^(seed|config|config\.local)\.php$|^\.ht">
+    <IfModule mod_authz_core.c>
+        Require all denied
+    </IfModule>
+    <IfModule !mod_authz_core.c>
+        Order allow,deny
+        Deny from all
+    </IfModule>
+</FilesMatch>
+
+<IfModule mod_headers.c>
+    # La app de terreno se actualiza sola: el teléfono tiene que preguntar siempre
+    # si hay versión nueva de estos archivos (su service worker guarda la copia offline).
+    <FilesMatch "^(sw\.js|app\.js|app\.css|index\.html|manifest\.webmanifest)$">
+        Header set Cache-Control "no-cache"
+    </FilesMatch>
+
+    Header always set X-Content-Type-Options "nosniff"
+    Header always set X-Frame-Options "DENY"
+    Header always set Referrer-Policy "strict-origin-when-cross-origin"
+</IfModule>

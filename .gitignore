@@ -1,0 +1,15 @@
+# Configuración con credenciales (no subir)
+config.php
+config.local.php
+.env
+
+# Base de datos local
+datos/*.sqlite
+datos/*.sqlite-*
+datos/*.db
+
+# Sistema / editor
+.DS_Store
+Thumbs.db
+.vscode/
+*.log

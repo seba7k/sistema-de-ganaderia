@@ -1,0 +1,8 @@
+# La base SQLite vive acá cuando se usa ese motor: nunca se sirve por la web.
+<IfModule mod_authz_core.c>
+    Require all denied
+</IfModule>
+<IfModule !mod_authz_core.c>
+    Order allow,deny
+    Deny from all
+</IfModule>
