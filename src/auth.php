@@ -32,7 +32,7 @@ const PERMISOS_POR_ROL = [
     'VETERINARIO' => [
         'ver_hacienda', 'ver_corrales', 'ver_alimentacion', 'ver_sanidad', 'ver_reproduccion', 'ver_insumos',
         'registrar_pesada', 'registrar_baja',
-        'registrar_tratamiento', 'registrar_servicio', 'registrar_diagnostico', 'registrar_parto',
+        'registrar_tratamiento', 'validar_tratamiento', 'registrar_servicio', 'registrar_diagnostico', 'registrar_parto',
         'registrar_secado', 'registrar_nota',
         'anular_registro', 'ver_bitacora',
         'ver_descartes', 'usar_app',

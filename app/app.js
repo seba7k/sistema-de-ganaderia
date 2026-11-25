@@ -35,6 +35,7 @@
     secado: svg('<path d="M12 3s5.5 5.4 5.5 9a5.5 5.5 0 0 1-11 0C6.5 8.4 12 3 12 3z"/><path d="m4 4 16 16"/>'),
     nota: svg('<path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><path d="M18.5 2.5a2.1 2.1 0 0 1 3 3L14 13l-4 1 1-4z"/>'),
     animal: svg('<circle cx="12" cy="12" r="9"/><path d="M12 8v8"/><path d="M8 12h8"/>'),
+    validar: svg('<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/>'),
   };
 
   const OPERACIONES = {
@@ -46,6 +47,7 @@
     SECADO:      { icono: ICONOS.secado, titulo: 'Secado', detalle: 'Fin de la lactancia, en lechería' },
     NOTA:        { icono: ICONOS.nota, titulo: 'Nota', detalle: 'Anotar lo que le pasó al animal' },
     ANIMAL:      { icono: ICONOS.animal, titulo: 'Alta de animal', detalle: 'Uno comprado o que faltaba cargar' },
+    VALIDACION:  { icono: ICONOS.validar, titulo: 'Validar tratamientos', detalle: 'Firma del médico veterinario autorizado', enCola: 'Validación MVA', guardado: 'Validación guardada' },
   };
 
   const SEXOS = [['HEMBRA', '♀ Hembra'], ['MACHO', '♂ Macho'], ['MACHO_CASTRADO', 'Castrado']];
@@ -143,6 +145,14 @@
   const nombreCorral = (id) => corralPorId(id)?.nombre || 'sin corral';
   const esMia = (op) => !!estado.sesion && op.usuario_id === estado.sesion.usuario.id;
   const porEnviar = () => estado.cola.filter((op) => esMia(op) && op.estado !== 'RECHAZADA');
+
+  /* Validación MVA. Lo que ya está en la cola del teléfono —por enviar o
+     rechazado— no se vuelve a ofrecer: si se rechazó, se ve en Envíos, y al
+     descartarlo vuelve a aparecer acá. */
+  const yaEnCola = (id) => estado.cola.some((op) => esMia(op) && op.tipo === 'VALIDACION' && op.datos.tratamiento_id === id);
+  const porValidar = () => (estado.catalogo?.por_validar || []).filter((t) => !yaEnCola(t.id));
+  // Aviso local: la decisión final es del servidor, que vuelve a revisar la vigencia al recibir.
+  const mvaVigente = () => !!estado.catalogo?.mva && estado.catalogo.mva.vigente_hasta >= hoy();
 
   /* ---------- Servidor ---------- */
 
@@ -244,7 +254,7 @@
     } finally {
       estado.sincronizando = false;
       if (estado.sesion) {
-        if (estado.pantalla === 'inicio' || estado.pantalla === 'pendientes') dibujar();
+        if (['inicio', 'pendientes', 'validar'].includes(estado.pantalla)) dibujar();
         else refrescarCabecera();
       }
     }
@@ -271,7 +281,8 @@
     estado.cola.push(op);
     if (alGuardar) alGuardar();
     await BD.escribir('catalogo', estado.catalogo);
-    aviso('✔ ' + OPERACIONES[tipo].titulo + (navigator.onLine ? ' guardado.' : ' guardado en el teléfono.'), 'ok');
+    const guardado = OPERACIONES[tipo].guardado || OPERACIONES[tipo].titulo + ' guardado';
+    aviso('✔ ' + guardado + (navigator.onLine ? '.' : ' en el teléfono.'), 'ok');
     if (navigator.onLine) setTimeout(() => sincronizar(), 300);
   }
 
@@ -347,6 +358,7 @@
       alimentacion: 'Alimentación',
       destino: 'Traslado',
       pendientes: 'Envíos',
+      validar: 'Validar tratamientos',
     };
     return titulos[estado.pantalla] || 'Terreno';
   }
@@ -470,7 +482,8 @@
         + '<h2>¿Qué vas a registrar?</h2>'
         + '<div class="tareas">' + tareas.map(([tipo, o]) => '<button type="button" class="tarea tarea-' + tipo.toLowerCase() + '" data-accion="empezar" data-tipo="' + tipo + '">'
           + '<span class="icono">' + o.icono + '</span>'
-          + '<span class="texto"><span class="titulo">' + o.titulo + '</span><span class="detalle">' + o.detalle + '</span></span>'
+          + '<span class="texto"><span class="titulo">' + o.titulo + '</span><span class="detalle">'
+          + (tipo === 'VALIDACION' && catalogo ? porValidar().length + ' pendiente(s) de firma' : o.detalle) + '</span></span>'
           + '<span class="flecha">' + ICONOS.ir + '</span></button>').join('') + '</div>'
         + '<section class="tarjeta-estado">'
         + '<div class="cifras">'
@@ -643,6 +656,34 @@
         }).join('') + '</div></main>';
     },
 
+    validar() {
+      const mva = estado.catalogo.mva;
+      const vigente = mvaVigente();
+      const lista = porValidar();
+      return '<main class="pantalla">'
+        + (vigente
+          ? '<p class="nota">Validás como MVA N° ' + esc(mva.numero) + ' · RUT ' + esc(mva.rut)
+            + '. Registro vigente hasta el ' + fechaCorta(mva.vigente_hasta) + '.</p>'
+          : '<div class="alerta roja">' + (mva
+            ? 'Tu registro MVA venció el ' + fechaCorta(mva.vigente_hasta) + '. Pedile al administrador que lo actualice.'
+            : 'No tenés un registro MVA cargado en esta organización. Lo carga el administrador en la web, en Usuarios.') + '</div>')
+        + '<p class="nota">Los tratamientos cargados en el teléfono aparecen acá después de sincronizar. '
+        + 'Las validaciones se guardan aunque no haya señal.</p>'
+        + (lista.length === 0
+          ? '<p class="vacio">No hay tratamientos por validar. ✔</p>'
+          : '<ul class="cola validar">' + lista.map((t) => '<li>'
+            + '<div class="tipo">' + esc(t.producto) + ' <span>' + fechaCorta(t.fecha) + '</span></div>'
+            + '<div class="resumen">' + esc(t.donde || 'Sin corral') + ' · ' + fmt(t.cabezas) + ' cabeza(s) · '
+            + fmt(t.dosis, 1) + ' ' + esc(UNIDADES[t.unidad] || '') + ' por animal</div>'
+            + '<div class="estado">' + esc(etiqueta(TIPOS_TRATAMIENTO, t.tipo)) + ' · ' + esc(etiqueta(VIAS, t.via)) + ' · carencia ' + t.carencia + ' d'
+            + (t.diagnostico ? ' · ' + esc(t.diagnostico) : '') + (t.cargo ? ' · cargó ' + esc(t.cargo) : '') + '</div>'
+            + (vigente
+              ? '<div class="acciones"><button type="button" class="boton exito" data-accion="validar" data-id="' + t.id + '">Validar</button></div>'
+              : '')
+            + '</li>').join('') + '</ul>')
+        + '</main>';
+    },
+
     pendientes() {
       const mias = estado.cola.filter(esMia).sort((a, b) => a.registrado_en.localeCompare(b.registrado_en));
       const ajenas = estado.cola.length - mias.length;
@@ -655,7 +696,7 @@
         + (mias.length === 0
           ? '<p class="vacio">No hay nada pendiente. ✔</p>'
           : '<ul class="cola">' + mias.map((op) => '<li class="' + (op.estado === 'RECHAZADA' ? 'rechazada' : '') + '">'
-            + '<div class="tipo">' + OPERACIONES[op.tipo].titulo + ' <span>' + fechaHora(op.registrado_en) + '</span></div>'
+            + '<div class="tipo">' + (OPERACIONES[op.tipo].enCola || OPERACIONES[op.tipo].titulo) + ' <span>' + fechaHora(op.registrado_en) + '</span></div>'
             + '<div class="resumen">' + esc(op.resumen) + '</div>'
             + (op.estado === 'RECHAZADA'
               ? '<div class="motivo">✖ ' + esc(op.mensaje) + '</div><div class="acciones">'
@@ -760,6 +801,7 @@
       const tipo = el.dataset.tipo;
       if (tipo === 'ENTREGA') return mostrar('alimentacion', {});
       if (tipo === 'ANIMAL') return mostrar('alta', {});
+      if (tipo === 'VALIDACION') return mostrar('validar', {});
       mostrar('identificar', { tipo, lista: [] });
     },
 
@@ -790,6 +832,24 @@
     'tratar-corral': (el) => mostrar('tratamiento', { ...(estado.ctx.previo || {}), corral: corralPorId(Number(el.dataset.id)) }),
     'animal-individual': () => mostrar('identificar', { tipo: 'ENTREGA', previo: { ...estado.ctx } }),
     'quitar-animal': () => mostrar('alimentacion', { ...estado.ctx, animal: null }),
+
+    validar: (el) => {
+      const t = porValidar().find((x) => x.id === Number(el.dataset.id));
+      if (!t) return;
+      const mva = estado.catalogo.mva;
+      confirmar({
+        titulo: 'Validar tratamiento',
+        texto: t.producto + ' en ' + (t.donde || 'sin corral') + ', ' + fmt(t.cabezas) + ' cabeza(s), aplicado el ' + fechaCorta(t.fecha)
+          + '. Queda firmado con tu registro MVA N° ' + mva.numero + '.',
+        si: 'Validar',
+        tono: 'exito',
+        alConfirmar: () => registrar(
+          'VALIDACION',
+          { tratamiento_id: t.id },
+          t.producto + ' · ' + (t.donde || 'sin corral') + ' · ' + fechaCorta(t.fecha),
+        ).then(() => dibujar()),
+      });
+    },
 
     reintentar: async (el) => {
       const op = estado.cola.find((o) => o.uuid === el.dataset.uuid);

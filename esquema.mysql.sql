@@ -44,6 +44,12 @@ CREATE TABLE IF NOT EXISTS membresias (
   rol                         VARCHAR(30) NOT NULL,
   establecimientos_permitidos VARCHAR(255) NOT NULL DEFAULT '[]',
   activa                      TINYINT(1) NOT NULL DEFAULT 1,
+  -- Médico Veterinario Autorizado ante el SAG. Va en la membresía y no en el
+  -- usuario: lo declara el administrador de cada organización, y así ninguno
+  -- puede cambiar un dato del que dependen las validaciones de otro dueño.
+  mva_rut                     VARCHAR(12) NULL,
+  mva_numero                  VARCHAR(30) NULL,
+  mva_vigente_hasta           DATE NULL,
   PRIMARY KEY (id),
   UNIQUE KEY uq_membresias (organizacion_id, usuario_id),
   CONSTRAINT fk_membresias_org FOREIGN KEY (organizacion_id) REFERENCES organizaciones (id),
@@ -281,6 +287,14 @@ CREATE TABLE IF NOT EXISTS tratamientos (
   anulada_por         INT NULL,
   anulada_en          DATETIME NULL,
   motivo_anulacion    VARCHAR(255) NULL,
+  -- Validación del MVA. El RUT y el número se copian al validar: si después
+  -- cambia su registro, la validación sigue diciendo quién y con qué la firmó.
+  -- La huella resume el tratamiento validado; si alguien lo cambia, deja de coincidir.
+  validado_por        INT NULL,
+  validado_en         DATETIME NULL,
+  validado_mva_rut    VARCHAR(12) NULL,
+  validado_mva_numero VARCHAR(30) NULL,
+  huella              CHAR(64) NULL,
   PRIMARY KEY (id),
   KEY idx_trat_fecha (organizacion_id, fecha),
   CONSTRAINT fk_trat_org FOREIGN KEY (organizacion_id) REFERENCES organizaciones (id),

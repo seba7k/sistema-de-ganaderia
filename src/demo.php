@@ -16,6 +16,8 @@ declare(strict_types=1);
 require_once __DIR__ . '/auth.php';
 // Los datos de cría usan la duración de la gestación para calcular los partos.
 require_once __DIR__ . '/dominio/reproduccion.php';
+// Las validaciones de ejemplo llevan la huella del MVA.
+require_once __DIR__ . '/dominio/mva.php';
 
 function cargar_datos_demo(PDO $pdo): void
 {
@@ -343,6 +345,36 @@ function cargar_datos_demo(PDO $pdo): void
                 [$org, $id_tratamiento, $id_animal],
             );
         }
+    }
+
+    /* ---------- Registro MVA del veterinario ----------
+       Vigente por un año. Los dos tratamientos más antiguos quedan validados y
+       los recientes pendientes, para que se vea la bandeja de validación. */
+
+    consultar(
+        'UPDATE membresias SET mva_rut = ?, mva_numero = ?, mva_vigente_hasta = ? WHERE organizacion_id = ? AND usuario_id = ?',
+        ['12345678-5', 'MVA-08-1234', $f($hoy->modify('+1 year')), $org, $ids_usuario['vet@ganaderia.cl']],
+    );
+    foreach (filas(
+        'SELECT * FROM tratamientos WHERE organizacion_id = ? ORDER BY fecha LIMIT 2',
+        [$org],
+    ) as $tratamiento) {
+        $tratamiento['validado_por'] = $ids_usuario['vet@ganaderia.cl'];
+        $tratamiento['validado_en'] = $tratamiento['fecha'] . ' 18:30:00';
+        $tratamiento['validado_mva_rut'] = '12345678-5';
+        $tratamiento['validado_mva_numero'] = 'MVA-08-1234';
+        $animales = array_map('intval', array_column(filas(
+            'SELECT animal_id FROM aplicaciones_tratamiento WHERE tratamiento_id = ?',
+            [(int) $tratamiento['id']],
+        ), 'animal_id'));
+        consultar(
+            'UPDATE tratamientos SET validado_por = ?, validado_en = ?, validado_mva_rut = ?, validado_mva_numero = ?, huella = ?
+              WHERE id = ?',
+            [
+                $tratamiento['validado_por'], $tratamiento['validado_en'], $tratamiento['validado_mva_rut'],
+                $tratamiento['validado_mva_numero'], huella_tratamiento($tratamiento, $animales), (int) $tratamiento['id'],
+            ],
+        );
     }
 
     /* ---------- Mortalidades y venta del lote cerrado ---------- */

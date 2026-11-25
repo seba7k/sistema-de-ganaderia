@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../db.php';
 require_once __DIR__ . '/../vistas/layout.php';
+require_once __DIR__ . '/../dominio/mva.php';
 
 exigir_permiso('gestionar_usuarios');
 
@@ -16,6 +17,77 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     exigir_post_valido('gestionar_usuarios', $volver);
     $accion = entrada('accion');
     $yo = (int) usuario_actual()['id'];
+
+    /* Registro MVA (Médico Veterinario Autorizado ante el SAG).
+       Lo declara el administrador para su organización. Como el resto de los
+       cambios de acceso, nadie se lo carga a sí mismo: quien valida tratamientos
+       no puede ser también quien se dio la autorización. Dejar los tres campos
+       vacíos quita el registro; las validaciones ya hechas no cambian, porque
+       guardaron su propia copia del RUT y del número. */
+    if ($accion === 'mva') {
+        $usuario_id = entrada_entera('usuario_id') ?? 0;
+        $miembro = fila(
+            'SELECT u.nombre, u.apellido, m.mva_numero FROM membresias m JOIN usuarios u ON u.id = m.usuario_id
+              WHERE m.organizacion_id = ? AND m.usuario_id = ?',
+            [$org, $usuario_id],
+        );
+        if ($miembro === null) {
+            flash('error', 'Esa persona no trabaja en esta organización.');
+            redirigir($volver);
+        }
+        if ($usuario_id === $yo) {
+            flash('error', 'No podés cargar tu propio registro MVA: pedíselo a otro administrador.');
+            redirigir($volver);
+        }
+        $nombre_miembro = $miembro['nombre'] . ' ' . $miembro['apellido'];
+
+        $quitar = entrada('mva_rut') === '' && entrada('mva_numero') === '' && entrada('mva_vigente_hasta') === '';
+        $rut = null;
+        $numero = null;
+        $vigencia = null;
+        if (!$quitar) {
+            $errores_mva = [];
+            $rut = normalizar_rut(entrada('mva_rut'));
+            if ($rut === null) {
+                $errores_mva[] = 'El RUT no es válido: revisá el dígito verificador.';
+            }
+            $numero = entrada('mva_numero');
+            if ($numero === '' || mb_strlen($numero) > 30) {
+                $errores_mva[] = 'Escribí el número de registro MVA (hasta 30 caracteres).';
+            }
+            $vigencia = entrada('mva_vigente_hasta');
+            $fecha = DateTimeImmutable::createFromFormat('!Y-m-d', $vigencia);
+            if ($fecha === false || $fecha->format('Y-m-d') !== $vigencia) {
+                $errores_mva[] = 'Indicá hasta qué fecha está vigente el registro.';
+            }
+            if ($errores_mva !== []) {
+                flash('error', 'Registro MVA de ' . $nombre_miembro . ': ' . implode(' ', $errores_mva));
+                redirigir($volver);
+            }
+        } elseif ($miembro['mva_numero'] === null) {
+            flash('error', $nombre_miembro . ' no tenía registro MVA cargado.');
+            redirigir($volver);
+        }
+
+        en_transaccion(static function () use ($org, $usuario_id, $rut, $numero, $vigencia, $yo, $nombre_miembro, $quitar): void {
+            consultar(
+                'UPDATE membresias SET mva_rut = ?, mva_numero = ?, mva_vigente_hasta = ?
+                  WHERE organizacion_id = ? AND usuario_id = ?',
+                [$rut, $numero, $vigencia, $org, $usuario_id],
+            );
+            registrar_bitacora(
+                $org, $yo, $quitar ? 'QUITA_MVA' : 'ACTUALIZA_MVA', 'membresias', $usuario_id,
+                $quitar
+                    ? $nombre_miembro
+                    : $nombre_miembro . ': MVA N° ' . $numero . ' · RUT ' . rut_legible($rut) . ' · vigente hasta ' . fecha_corta($vigencia),
+            );
+        });
+
+        flash('exito', $quitar
+            ? $nombre_miembro . ' ya no tiene registro MVA: no va a poder validar tratamientos.'
+            : 'Registro MVA de ' . $nombre_miembro . ' guardado, vigente hasta el ' . fecha_corta($vigencia) . '.');
+        redirigir($volver);
+    }
 
     /* Cambiar rol, quitar o devolver el acceso y reiniciar la contraseña.
        Tres reglas: nadie se toca a sí mismo (así nadie se deja afuera ni se sube
@@ -232,7 +304,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
    así que consultarla directo devolvería gente de otras organizaciones. */
 $miembros = filas(
     'SELECT u.id, u.email, u.nombre, u.apellido, u.telefono, u.activo, u.ultimo_acceso_en,
-            m.rol, m.activa AS membresia_activa,
+            m.rol, m.activa AS membresia_activa, m.mva_rut, m.mva_numero, m.mva_vigente_hasta,
             (SELECT COUNT(*) FROM membresias m2 WHERE m2.usuario_id = u.id) AS organizaciones
        FROM membresias m
        JOIN usuarios u ON u.id = m.usuario_id
@@ -263,6 +335,9 @@ echo ayuda_pantalla('¿Qué puede hacer cada rol?', [
         ? 'Registra tratamientos, servicios, diagnósticos de preñez, partos y pesajes. Consulta hacienda, corrales, alimentación e insumos.'
         : 'Registra servicios, diagnósticos de preñez, partos, secados, pesajes y notas. Puede anular lo que se cargó mal.',
     'Operario de manga' => 'Registra pesajes, partos, entregas de alimento, traslados y bajas. No medica, no vende ni administra usuarios.',
+    ...(GESTION_AVANZADA ? [
+        'Registro MVA' => 'Médico Veterinario Autorizado ante el SAG. Solo quien tiene un registro MVA vigente puede validar tratamientos, y anular uno ya validado.',
+    ] : []),
 ]);
 
 /* ---------- Formulario de carga ---------- */
@@ -371,5 +446,69 @@ echo cerrar_alta();
     </table>
   </div>
 </div>
+
+<?php
+/* Registro MVA: lo tienen los veterinarios y, si corresponde, algún
+   administrador que también lo sea. */
+$con_mva = array_values(array_filter(
+    $miembros,
+    static fn (array $m): bool => $m['rol'] === 'VETERINARIO' || $m['mva_numero'] !== null,
+));
+?>
+<?php if (GESTION_AVANZADA && $con_mva !== []): ?>
+<div class="bloque">
+  <header>
+    <div>
+      <h2>Registro MVA</h2>
+      <div class="sub">Médicos veterinarios autorizados ante el SAG: son los que pueden validar tratamientos</div>
+    </div>
+  </header>
+  <div class="tabla-scroll">
+    <table>
+      <thead>
+        <tr><th>Veterinario</th><th>Registro actual</th><th>Actualizar (RUT · N° MVA · vigente hasta)</th></tr>
+      </thead>
+      <tbody>
+      <?php foreach ($con_mva as $miembro): ?>
+        <?php $vigente = mva_vigente($miembro, hoy()); ?>
+        <tr>
+          <td><span class="principal"><?= h($miembro['nombre'] . ' ' . $miembro['apellido']) ?></span></td>
+          <td>
+            <?php if ($miembro['mva_numero'] === null): ?>
+              <?= insignia('Sin registro', 'neutro') ?>
+            <?php else: ?>
+              <?= $vigente ? insignia('Vigente', 'ok') : insignia('Vencido', 'riesgo') ?>
+              <div class="secundario">
+                N° <?= h($miembro['mva_numero']) ?> · RUT <?= h(rut_legible($miembro['mva_rut'])) ?>
+                · hasta <?= fecha_corta($miembro['mva_vigente_hasta']) ?>
+              </div>
+            <?php endif; ?>
+          </td>
+          <td>
+            <?php if ((int) $miembro['id'] === (int) usuario_actual()['id']): ?>
+              <div class="secundario">Tu registro lo carga otro administrador</div>
+            <?php else: ?>
+              <form method="post" action="<?= h(url('/usuarios')) ?>" class="acciones-fila">
+                <input type="hidden" name="csrf" value="<?= h(token_csrf()) ?>">
+                <input type="hidden" name="accion" value="mva">
+                <input type="hidden" name="usuario_id" value="<?= (int) $miembro['id'] ?>">
+                <input type="text" name="mva_rut" value="<?= h($miembro['mva_rut'] !== null ? rut_legible($miembro['mva_rut']) : '') ?>"
+                       placeholder="12.345.678-9" aria-label="RUT de <?= h($miembro['nombre']) ?>" size="12">
+                <input type="text" name="mva_numero" value="<?= h($miembro['mva_numero'] ?? '') ?>"
+                       placeholder="N° MVA" maxlength="30" aria-label="Número MVA de <?= h($miembro['nombre']) ?>" size="10">
+                <input type="date" name="mva_vigente_hasta" value="<?= h(substr((string) $miembro['mva_vigente_hasta'], 0, 10)) ?>"
+                       aria-label="Vigencia del registro de <?= h($miembro['nombre']) ?>">
+                <button class="boton menudo" type="submit">Guardar</button>
+              </form>
+              <div class="secundario">Dejá los tres campos vacíos para quitar el registro</div>
+            <?php endif; ?>
+          </td>
+        </tr>
+      <?php endforeach; ?>
+      </tbody>
+    </table>
+  </div>
+</div>
+<?php endif; ?>
 
 <?php cerrar_pagina(); ?>

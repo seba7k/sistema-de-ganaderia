@@ -32,6 +32,9 @@ CREATE TABLE IF NOT EXISTS membresias (
   rol                         TEXT NOT NULL,
   establecimientos_permitidos TEXT NOT NULL DEFAULT '[]',
   activa                      INTEGER NOT NULL DEFAULT 1,
+  mva_rut                     TEXT,
+  mva_numero                  TEXT,
+  mva_vigente_hasta           TEXT,
   UNIQUE (organizacion_id, usuario_id)
 );
 
@@ -210,7 +213,12 @@ CREATE TABLE IF NOT EXISTS tratamientos (
   anulada         INTEGER NOT NULL DEFAULT 0,
   anulada_por     INTEGER,
   anulada_en      TEXT,
-  motivo_anulacion TEXT
+  motivo_anulacion TEXT,
+  validado_por        INTEGER REFERENCES usuarios(id),
+  validado_en         TEXT,
+  validado_mva_rut    TEXT,
+  validado_mva_numero TEXT,
+  huella              TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_trat_fecha ON tratamientos(organizacion_id, fecha);
 
