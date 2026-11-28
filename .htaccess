@@ -18,7 +18,7 @@ AddType application/manifest+json .webmanifest
     RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
 
     # Código y datos internos: nunca se sirven por la web.
-    RewriteRule ^(src|datos|pruebas)(/.*)?$ - [F,L]
+    RewriteRule ^(src|datos|pruebas|docs|app_flutter)(/.*)?$ - [F,L]
     RewriteRule ^(seed\.php|config(\.local|\.ejemplo)?\.php|esquema\.[a-z]+\.sql|[^/]+\.md)$ - [F,L]
 
     # Todo lo que no sea un archivo o carpeta real va al front controller.
