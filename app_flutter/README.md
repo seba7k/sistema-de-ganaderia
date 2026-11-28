@@ -12,8 +12,14 @@ Esta carpeta **no se sube al hosting**: el `.htaccess` la bloquea igual.
 | Etapa | Contenido | Estado |
 |---|---|---|
 | 1 | Ingreso (con elección de organización), token seguro, catálogo guardado, inicio con las tareas del rol, cerrar sesión | Hecha |
-| 2 | Cola sin señal y sincronización | Pendiente |
+| 2 | Cola sin señal y sincronización | Hecha |
 | 3 a 6 | Tareas, validación MVA, salida, lectura con cámara y bastón RFID | Pendiente |
+
+Para habilitar los envíos, el servidor debe incluir `usuario.organizacion_id`
+en las respuestas de sesión y catálogo. Las sesiones guardadas por la etapa 1
+obtienen el identificador al actualizar los datos del campo. La app intenta
+sincronizar al abrir o volver a la pantalla y cada 30 segundos mientras está
+activa y quedan registros por enviar. También se puede sincronizar desde **Envíos**.
 
 ## Estructura
 

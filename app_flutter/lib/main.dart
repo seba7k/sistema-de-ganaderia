@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'src/estado/estado.dart';
 import 'src/pantallas/ingreso.dart';
-import 'src/pantallas/inicio.dart';
+import 'src/pantallas/envios.dart';
 
 void main() {
   runApp(const ProviderScope(child: AppTerreno()));
@@ -27,7 +27,7 @@ class AppTerreno extends ConsumerWidget {
         inputDecorationTheme: const InputDecorationTheme(border: OutlineInputBorder()),
       ),
       home: sesion.when(
-        data: (s) => s == null ? const PantallaIngreso() : const PantallaInicio(),
+        data: (s) => s == null ? const PantallaIngreso() : TerrenoConSesion(key: ValueKey(s.token)),
         loading: () => const Scaffold(body: Center(child: CircularProgressIndicator())),
         error: (_, _) => const PantallaIngreso(),
       ),

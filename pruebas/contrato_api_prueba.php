@@ -143,8 +143,9 @@ prueba('sesion: el ingreso devuelve token, usuario y operaciones', function (): 
     afirmar_claves(['token', 'expira_en', 'usuario', 'operaciones'], $r['cuerpo'], 'respuesta');
     afirmar(preg_match('/^[a-f0-9]{64}$/', $r['cuerpo']['token']) === 1, 'token de 64 hex');
     afirmar(preg_match('/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/', $r['cuerpo']['expira_en']) === 1, 'expira_en');
-    afirmar_claves(['id', 'nombre', 'rol', 'rol_nombre', 'organizacion'], $r['cuerpo']['usuario'], 'usuario');
+    afirmar_claves(['id', 'nombre', 'rol', 'rol_nombre', 'organizacion', 'organizacion_id'], $r['cuerpo']['usuario'], 'usuario');
     afirmar(is_int($r['cuerpo']['usuario']['id']), 'id entero');
+    afirmar(is_int($r['cuerpo']['usuario']['organizacion_id']) && $r['cuerpo']['usuario']['organizacion_id'] > 0, 'organización identificada');
     afirmar(array_is_list($r['cuerpo']['operaciones']) && in_array('PESADA', $r['cuerpo']['operaciones'], true), 'operaciones');
 });
 

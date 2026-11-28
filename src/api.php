@@ -152,6 +152,7 @@ function datos_usuario_api(array $quien): array
         'rol'          => $quien['rol'],
         'rol_nombre'   => nombre_rol($quien['rol']),
         'organizacion' => $quien['organizacion'],
+        'organizacion_id' => (int) $quien['organizacion_id'],
     ];
 }
 
@@ -236,6 +237,7 @@ function api_sesion(): never
         'usuario'     => datos_usuario_api([
             'usuario_id' => $usuario['id'], 'nombre' => $usuario['nombre'], 'apellido' => $usuario['apellido'],
             'rol' => $usuario['rol'], 'organizacion' => $usuario['organizacion'],
+            'organizacion_id' => $usuario['organizacion_id'],
         ]),
         'operaciones' => operaciones_del_rol($usuario['rol']),
     ]);

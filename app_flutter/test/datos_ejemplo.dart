@@ -12,6 +12,7 @@ Map<String, dynamic> usuarioEjemplo({String rol = 'OPERARIO', String organizacio
       'rol': rol,
       'rol_nombre': rol == 'OPERARIO' ? 'Operario' : 'Administrador',
       'organizacion': organizacion,
+      'organizacion_id': 1,
     };
 
 const operacionesOperario = ['PESADA', 'PARTO', 'SECADO', 'NOTA', 'ENTREGA', 'TRASLADO', 'BAJA'];

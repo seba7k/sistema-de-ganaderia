@@ -45,7 +45,7 @@ Respuesta 200:
 {
   "token": "64 hex",
   "expira_en": "2026-12-27 10:00:00",
-  "usuario": { "id": 3, "nombre": "Juan Pérez", "rol": "OPERARIO", "rol_nombre": "Operario", "organizacion": "Agrícola Los Robles" },
+  "usuario": { "id": 3, "nombre": "Juan Pérez", "rol": "OPERARIO", "rol_nombre": "Operario", "organizacion": "Agrícola Los Robles", "organizacion_id": 2 },
   "operaciones": ["PESADA", "PARTO", "SECADO", "NOTA", "ENTREGA", "TRASLADO"]
 }
 ```
@@ -72,7 +72,7 @@ Requiere token. Respuesta 200:
 | `corrales` | lista | `id`, `nombre`, `tipo`, `capacidad`, `ocupacion`. |
 | `raciones` | lista | `id`, `nombre`, `etapa`, `materia_seca` (%). |
 | `productos` | lista | Veterinarios (vacía sin gestión avanzada): `id`, `nombre`, `unidad`, `carencia` (días), `stock`. |
-| `usuario` | objeto | Igual que en `/sesion`. |
+| `usuario` | objeto | Igual que en `/sesion`. Flutter usa `organizacion_id` para identificar al dueño de los envíos pendientes. |
 | `operaciones` | lista | Igual que en `/sesion`, con el rol vigente. |
 | `mva` | objeto o null | Solo si el rol valida: `numero`, `rut`, `vigente_hasta`, `vigente`. |
 | `por_validar` | lista | Solo si el rol valida: `id`, `fecha`, `producto`, `unidad`, `tipo`, `via`, `dosis`, `cabezas`, `carencia`, `diagnostico`, `donde`, `cargo`. Hasta 200. |

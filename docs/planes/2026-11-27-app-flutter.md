@@ -1,7 +1,7 @@
 # Plan — App de terreno en Flutter
 
 Fecha: 2026-11-27. Pasar la app de terreno (hoy una PWA en `app/`) a Flutter,
-usando **la misma API** del servidor, sin cambiarla.
+usando las rutas y operaciones de la API existente.
 
 ## Objetivo
 
@@ -14,7 +14,7 @@ local más robusta.
 
 | Tema | Decisión | Por qué |
 |---|---|---|
-| API | Sin cambios: `/api/sesion`, `/api/catalogo`, `/api/sincronizar`, `/api/sesion/cerrar` | El servidor ya resuelve reglas, permisos e idempotencia; la app solo las consume. El contrato queda congelado con pruebas (etapa 0). |
+| API | `/api/sesion`, `/api/catalogo`, `/api/sincronizar`, `/api/sesion/cerrar` | El servidor resuelve reglas, permisos e idempotencia. La etapa 2 agregó `usuario.organizacion_id` en sesión y catálogo para aislar la cola por organización. |
 | Plataforma | Android primero | Se compila en Windows. iPhone necesita un Mac; queda para después. |
 | Repositorio | Mismo repo, carpeta `app_flutter/` | API, pruebas de contrato y app quedan juntas. La carpeta no se sube al hosting. |
 | Convivencia | La PWA sigue funcionando hasta que la app Flutter esté probada en terreno | No se pierde nada mientras se construye. |

@@ -101,6 +101,22 @@ class ClienteApi {
     await _llamar('POST', sesion.servidor, 'sesion/cerrar', token: sesion.token);
   }
 
+  Future<List<Map<String, dynamic>>> sincronizar(
+    Sesion sesion,
+    List<Map<String, dynamic>> operaciones,
+  ) async {
+    final respuesta = await _llamar(
+      'POST', sesion.servidor, 'sincronizar',
+      token: sesion.token,
+      cuerpo: {'operaciones': operaciones},
+    );
+    final resultados = respuesta['resultados'];
+    if (resultados is! List) {
+      throw const ErrorApi('El servidor no devolvió el resultado de los envíos.');
+    }
+    return resultados.whereType<Map<String, dynamic>>().toList();
+  }
+
   Future<Map<String, dynamic>> _llamar(
     String metodo,
     String servidor,

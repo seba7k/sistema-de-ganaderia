@@ -11,13 +11,14 @@ List<Map<String, dynamic>> _lista(Object? v) =>
     v is List ? v.whereType<Map>().map((m) => Map<String, dynamic>.from(m)).toList() : const [];
 
 class Usuario {
-  const Usuario({required this.id, required this.nombre, required this.rol, required this.rolNombre, required this.organizacion});
+  const Usuario({required this.id, required this.nombre, required this.rol, required this.rolNombre, required this.organizacion, this.organizacionId});
 
   final int id;
   final String nombre;
   final String rol;
   final String rolNombre;
   final String organizacion;
+  final int? organizacionId;
 
   factory Usuario.fromJson(Map<String, dynamic> j) => Usuario(
         id: _entero(j['id']),
@@ -25,10 +26,11 @@ class Usuario {
         rol: '${j['rol'] ?? ''}',
         rolNombre: '${j['rol_nombre'] ?? ''}',
         organizacion: '${j['organizacion'] ?? ''}',
+        organizacionId: _enteroONulo(j['organizacion_id']),
       );
 
   Map<String, dynamic> toJson() =>
-      {'id': id, 'nombre': nombre, 'rol': rol, 'rol_nombre': rolNombre, 'organizacion': organizacion};
+      {'id': id, 'nombre': nombre, 'rol': rol, 'rol_nombre': rolNombre, 'organizacion': organizacion, 'organizacion_id': ?organizacionId};
 }
 
 /// Sesión abierta en el teléfono: el token y a qué servidor pertenece.

@@ -4,9 +4,6 @@ import 'package:drift_flutter/drift_flutter.dart';
 part 'base_local.g.dart';
 
 /// Datos guardados como clave → texto (el catálogo, en JSON).
-///
-/// La cola de operaciones sin señal llega en la etapa 2, como tabla propia con
-/// su migración (schemaVersion 2).
 class Guardados extends Table {
   TextColumn get clave => text()();
   TextColumn get valor => text()();
@@ -16,12 +13,34 @@ class Guardados extends Table {
   Set<Column> get primaryKey => {clave};
 }
 
-@DriftDatabase(tables: [Guardados])
+@DataClassName('Envio')
+class Envios extends Table {
+  IntColumn get orden => integer().autoIncrement()();
+  TextColumn get uuid => text().unique()();
+  TextColumn get servidor => text()();
+  IntColumn get usuarioId => integer()();
+  IntColumn get organizacionId => integer()();
+  TextColumn get tipo => text()();
+  TextColumn get datos => text()();
+  TextColumn get registradoEn => text()();
+  TextColumn get estado => text().withDefault(const Constant('PENDIENTE'))();
+  TextColumn get mensaje => text().nullable()();
+  BoolColumn get requiereConfirmacion => boolean().withDefault(const Constant(false))();
+}
+
+@DriftDatabase(tables: [Guardados, Envios])
 class BaseLocal extends _$BaseLocal {
   BaseLocal([QueryExecutor? ejecutor]) : super(ejecutor ?? driftDatabase(name: 'terreno'));
 
   @override
-  int get schemaVersion => 1;
+  int get schemaVersion => 2;
+
+  @override
+  MigrationStrategy get migration => MigrationStrategy(
+        onUpgrade: (migrador, desde, hasta) async {
+          if (desde < 2) await migrador.createTable(envios);
+        },
+      );
 
   Future<String?> leer(String clave) async =>
       (await (select(guardados)..where((g) => g.clave.equals(clave))).getSingleOrNull())?.valor;
@@ -30,5 +49,6 @@ class BaseLocal extends _$BaseLocal {
         GuardadosCompanion.insert(clave: clave, valor: valor, actualizado: Value(DateTime.now())),
       );
 
-  Future<void> borrarTodo() => delete(guardados).go();
+  Future<void> borrar(String clave) =>
+      (delete(guardados)..where((g) => g.clave.equals(clave))).go();
 }

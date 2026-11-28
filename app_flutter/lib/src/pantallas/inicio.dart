@@ -14,7 +14,10 @@ String fechaHoraCorta(String f) {
 /// Inicio: quién trabaja, en qué organización, el estado de los datos del
 /// campo y las tareas que su rol permite.
 class PantallaInicio extends ConsumerWidget {
-  const PantallaInicio({super.key});
+  const PantallaInicio({super.key, required this.abrirEnvios, required this.cantidadEnvios});
+
+  final VoidCallback abrirEnvios;
+  final int cantidadEnvios;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -34,6 +37,15 @@ class PantallaInicio extends ConsumerWidget {
           ],
         ),
         actions: [
+          IconButton(
+            tooltip: 'Envíos',
+            onPressed: abrirEnvios,
+            icon: Badge(
+              isLabelVisible: cantidadEnvios > 0,
+              label: Text('$cantidadEnvios'),
+              child: const Icon(Icons.outbox_outlined),
+            ),
+          ),
           PopupMenuButton<String>(
             key: const Key('menu-inicio'),
             onSelected: (opcion) {
@@ -82,7 +94,7 @@ class PantallaInicio extends ConsumerWidget {
       context: context,
       builder: (contexto) => AlertDialog(
         title: const Text('Cerrar sesión'),
-        content: const Text('Se borran del teléfono los datos del campo. Para volver a trabajar hay que ingresar con señal.'),
+        content: const Text('Se borra el catálogo del teléfono. Los envíos pendientes quedan guardados para esta cuenta. Para volver a trabajar hay que ingresar con señal.'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(contexto, false), child: const Text('Cancelar')),
           FilledButton(key: const Key('confirmar-salida'), onPressed: () => Navigator.pop(contexto, true), child: const Text('Cerrar sesión')),

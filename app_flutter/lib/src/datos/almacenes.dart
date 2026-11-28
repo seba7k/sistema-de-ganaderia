@@ -56,7 +56,7 @@ class AlmacenSesionSeguro implements AlmacenSesion {
 abstract class AlmacenLocal {
   Future<Catalogo?> leerCatalogo();
   Future<void> guardarCatalogo(Catalogo catalogo);
-  Future<void> borrarTodo();
+  Future<void> borrarCatalogo();
 }
 
 class AlmacenLocalDrift implements AlmacenLocal {
@@ -80,7 +80,7 @@ class AlmacenLocalDrift implements AlmacenLocal {
   Future<void> guardarCatalogo(Catalogo catalogo) => _base.escribir(_claveCatalogo, jsonEncode(catalogo.crudo));
 
   @override
-  Future<void> borrarTodo() => _base.borrarTodo();
+  Future<void> borrarCatalogo() => _base.borrar(_claveCatalogo);
 }
 
 /// Versiones en memoria, para las pruebas.
@@ -112,5 +112,5 @@ class AlmacenLocalEnMemoria implements AlmacenLocal {
   @override
   Future<void> guardarCatalogo(Catalogo c) async => catalogo = c;
   @override
-  Future<void> borrarTodo() async => catalogo = null;
+  Future<void> borrarCatalogo() async => catalogo = null;
 }

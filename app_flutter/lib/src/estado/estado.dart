@@ -13,11 +13,13 @@ final clienteApiProvider = Provider<ClienteApi>((ref) => ClienteApi());
 
 final almacenSesionProvider = Provider<AlmacenSesion>((ref) => AlmacenSesionSeguro());
 
-final almacenLocalProvider = Provider<AlmacenLocal>((ref) {
+final baseLocalProvider = Provider<BaseLocal>((ref) {
   final base = BaseLocal();
   ref.onDispose(base.close);
-  return AlmacenLocalDrift(base);
+  return base;
 });
+
+final almacenLocalProvider = Provider<AlmacenLocal>((ref) => AlmacenLocalDrift(ref.watch(baseLocalProvider)));
 
 /* ---------- Sesión ---------- */
 
@@ -25,6 +27,14 @@ final almacenLocalProvider = Provider<AlmacenLocal>((ref) {
 final sesionProvider = AsyncNotifierProvider<SesionNotifier, Sesion?>(SesionNotifier.new);
 
 class SesionNotifier extends AsyncNotifier<Sesion?> {
+  Future<void> _escritura = Future.value();
+
+  Future<T> _serializar<T>(Future<T> Function() accion) {
+    final resultado = _escritura.then((_) => accion());
+    _escritura = resultado.then<void>((_) {}, onError: (Object _, StackTrace _) {});
+    return resultado;
+  }
+
   @override
   Future<Sesion?> build() => ref.read(almacenSesionProvider).leer();
 
@@ -43,52 +53,61 @@ class SesionNotifier extends AsyncNotifier<Sesion?> {
           organizacionId: organizacionId,
         );
     if (resultado is Ingresado) {
-      final almacen = ref.read(almacenSesionProvider);
-      await almacen.guardar(resultado.sesion);
-      await almacen.recordarIngreso(servidor, email.trim());
-      // Datos de otra persona u organización no se mezclan con los nuevos.
-      final anterior = state.value;
-      if (anterior == null ||
-          anterior.servidor != resultado.sesion.servidor ||
-          anterior.usuario.id != resultado.sesion.usuario.id ||
-          anterior.usuario.organizacion != resultado.sesion.usuario.organizacion) {
-        await ref.read(almacenLocalProvider).borrarTodo();
-      }
-      state = AsyncData(resultado.sesion);
+      await _serializar(() async {
+        final almacen = ref.read(almacenSesionProvider);
+        // Datos de otra persona u organización no se mezclan con los nuevos.
+        final anterior = state.value;
+        if (anterior == null ||
+            anterior.servidor != resultado.sesion.servidor ||
+            anterior.usuario.id != resultado.sesion.usuario.id ||
+            anterior.usuario.organizacionId != resultado.sesion.usuario.organizacionId ||
+            anterior.usuario.organizacion != resultado.sesion.usuario.organizacion) {
+          await ref.read(almacenLocalProvider).borrarCatalogo();
+        }
+        await almacen.recordarIngreso(servidor, email.trim());
+        await almacen.guardar(resultado.sesion);
+        state = AsyncData(resultado.sesion);
+      });
     }
     return resultado;
   }
 
   /// Actualiza las tareas permitidas con lo que dice el catálogo: si el
   /// administrador cambió el rol, rige desde la próxima descarga.
-  Future<void> actualizarPermisos(Catalogo catalogo) async {
+  Future<bool> guardarCatalogo(Catalogo catalogo, String token) => _serializar(() async {
     final actual = state.value;
-    if (actual == null) return;
+    if (actual == null || actual.token != token) return false;
     final nueva = actual.conOperaciones(catalogo.operaciones, catalogo.usuario);
+    await ref.read(almacenLocalProvider).guardarCatalogo(catalogo);
     await ref.read(almacenSesionProvider).guardar(nueva);
     state = AsyncData(nueva);
-  }
+    return true;
+  });
 
   /// La sesión venció en el servidor (401): se vuelve al ingreso, pero los datos
-  /// del teléfono quedan (en la etapa 2, también la cola de lo no enviado).
-  Future<void> vencer() async {
+  /// del teléfono quedan, incluida la cola de lo no enviado.
+  Future<void> vencer(String token) => _serializar(() async {
+    if (state.value?.token != token) return;
     await ref.read(almacenSesionProvider).borrar();
     state = const AsyncData(null);
-  }
+  });
 
-  /// Cierra la sesión: avisa al servidor si hay señal y borra los datos locales.
+  /// Cierra la sesión y borra el catálogo. Los envíos quedan asociados a su cuenta.
   Future<void> cerrar() async {
     final actual = state.value;
     if (actual != null) {
+      await _serializar(() async {
+        if (state.value?.token != actual.token && state.value != null) return;
+        await ref.read(almacenSesionProvider).borrar();
+        await ref.read(almacenLocalProvider).borrarCatalogo();
+        state = const AsyncData(null);
+      });
       try {
         await ref.read(clienteApiProvider).cerrarSesion(actual);
       } on ErrorApi {
         // Sin señal o token ya vencido: el token caduca solo en el servidor.
       }
     }
-    await ref.read(almacenSesionProvider).borrar();
-    await ref.read(almacenLocalProvider).borrarTodo();
-    state = const AsyncData(null);
   }
 }
 
@@ -135,14 +154,15 @@ class CatalogoNotifier extends AsyncNotifier<EstadoCatalogo> {
     state = AsyncData(previo.copiar(descargando: true, sinAviso: true));
     try {
       final catalogo = await ref.read(clienteApiProvider).catalogo(sesion);
-      await ref.read(almacenLocalProvider).guardarCatalogo(catalogo);
+      final guardado = await ref.read(sesionProvider.notifier).guardarCatalogo(catalogo, sesion.token);
+      if (!guardado || ref.read(sesionProvider).value?.token != sesion.token) return;
       state = AsyncData(EstadoCatalogo(catalogo: catalogo));
-      await ref.read(sesionProvider.notifier).actualizarPermisos(catalogo);
     } on ErrorApi catch (e) {
       if (e.sesionVencida) {
-        await ref.read(sesionProvider.notifier).vencer();
+        await ref.read(sesionProvider.notifier).vencer(sesion.token);
         return;
       }
+      if (ref.read(sesionProvider).value?.token != sesion.token) return;
       state = AsyncData(previo.copiar(descargando: false, aviso: e.mensaje));
     }
   }

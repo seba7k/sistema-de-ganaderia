@@ -6,6 +6,7 @@ import 'package:terreno/main.dart';
 import 'package:terreno/src/api/cliente_api.dart';
 import 'package:terreno/src/datos/almacenes.dart';
 import 'package:terreno/src/estado/estado.dart';
+import 'package:terreno/src/estado/sincronizacion.dart';
 import 'package:terreno/src/modelos/modelos.dart';
 
 import 'datos_ejemplo.dart';
@@ -30,6 +31,7 @@ void main() {
         clienteApiProvider.overrideWithValue(ClienteApi(cliente: servidor.cliente)),
         almacenSesionProvider.overrideWithValue(almacenSesion),
         almacenLocalProvider.overrideWithValue(almacenLocal),
+        enviosProvider.overrideWith((ref) => Stream.value([])),
       ],
       child: const AppTerreno(),
     ));
@@ -95,6 +97,20 @@ void main() {
     await abrirApp(tester);
     await ingresar(tester);
     expect(find.text('Correo o contraseña incorrectos.'), findsOneWidget);
+  });
+
+  testWidgets('permite abrir Envíos desde inicio y volver', (tester) async {
+    await abrirApp(tester);
+    await ingresar(tester);
+
+    await tester.tap(find.byTooltip('Envíos'));
+    await tester.pumpAndSettle();
+    expect(find.text('No hay registros pendientes.'), findsOneWidget);
+    expect(tester.widget<FilledButton>(find.byWidgetPredicate((widget) => widget is FilledButton)).onPressed, isNull);
+
+    await tester.tap(find.byType(BackButton));
+    await tester.pumpAndSettle();
+    expect(find.text('Hola, Juan'), findsOneWidget);
   });
 
   testWidgets('sin señal sigue con el catálogo guardado y lo avisa', (tester) async {
