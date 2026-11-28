@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -6,8 +7,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../datos/base_local.dart';
 import '../estado/estado.dart';
 import '../estado/sincronizacion.dart';
+import '../modelos/tareas_animal.dart';
 import '../tareas.dart';
 import 'inicio.dart';
+import 'tarea_animal.dart';
 
 class TerrenoConSesion extends ConsumerStatefulWidget {
   const TerrenoConSesion({super.key});
@@ -20,6 +23,12 @@ class _TerrenoConSesionState extends ConsumerState<TerrenoConSesion> {
   late final AppLifecycleListener _ciclo;
   Timer? _reintento;
   bool _enEnvios = false;
+  Tarea? _tarea;
+
+  void _volver() => setState(() {
+    _enEnvios = false;
+    _tarea = null;
+  });
 
   @override
   void initState() {
@@ -70,17 +79,21 @@ class _TerrenoConSesionState extends ConsumerState<TerrenoConSesion> {
       }
     });
     final cantidad = ref.watch(enviosProvider).value?.length ?? 0;
+    final tarea = _tarea;
     return PopScope(
       canPop: !_enEnvios,
       onPopInvokedWithResult: (salio, _) {
-        if (!salio && _enEnvios) setState(() => _enEnvios = false);
+        if (!salio && _enEnvios) _volver();
       },
-      child: _enEnvios
-          ? PantallaEnvios(volver: () => setState(() => _enEnvios = false))
-          : PantallaInicio(
-              abrirEnvios: () => setState(() => _enEnvios = true),
-              cantidadEnvios: cantidad,
-            ),
+      child: switch ((tarea, _enEnvios)) {
+        (final tarea?, _) => PantallaTareaAnimal(tarea: tarea, volver: _volver),
+        (_, true) => PantallaEnvios(volver: _volver),
+        _ => PantallaInicio(
+          abrirEnvios: () => setState(() => _enEnvios = true),
+          abrirTarea: (tarea) => setState(() => _tarea = tarea),
+          cantidadEnvios: cantidad,
+        ),
+      },
     );
   }
 }
@@ -95,6 +108,11 @@ class PantallaEnvios extends ConsumerWidget {
     final envios = ref.watch(enviosProvider);
     final sincronizacion = ref.watch(sincronizacionProvider);
     final sesion = ref.watch(sesionProvider).value;
+    final catalogo = ref.watch(catalogoProvider).value?.catalogo;
+    final animales = <int, String>{
+      if (catalogo != null)
+        for (final animal in catalogo.animales) animal.id: animal.nombre,
+    };
     final registros = envios.value ?? const <Envio>[];
     final enviable = registros.any((envio) => envio.estado != 'RECHAZADA');
     return Scaffold(
@@ -136,6 +154,7 @@ class PantallaEnvios extends ConsumerWidget {
                 subtitle: Text(
                   [
                     fechaHoraCorta(envio.registradoEn),
+                    ?_detalleAnimal(envio, animales),
                     switch (envio.estado) {
                       'ERROR' => 'Se volverá a intentar',
                       'RECHAZADA' => 'Rechazado',
@@ -166,6 +185,16 @@ class PantallaEnvios extends ConsumerWidget {
         ],
       ),
     );
+  }
+
+  String? _detalleAnimal(Envio envio, Map<int, String> animales) {
+    if (!tareasPorAnimal.contains(envio.tipo)) return null;
+    final datos = jsonDecode(envio.datos) as Map<String, dynamic>;
+    final id = datos['animal_id'] ?? datos['vaca_id'];
+    final fecha = datos['fecha'];
+    if (id is! int || fecha is! String) return null;
+    final nombre = animales[id] ?? '#$id';
+    return '$nombre · ${fechaVisible(fecha)}';
   }
 
   Future<void> _resolver(

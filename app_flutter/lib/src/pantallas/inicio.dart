@@ -14,9 +14,10 @@ String fechaHoraCorta(String f) {
 /// Inicio: quién trabaja, en qué organización, el estado de los datos del
 /// campo y las tareas que su rol permite.
 class PantallaInicio extends ConsumerWidget {
-  const PantallaInicio({super.key, required this.abrirEnvios, required this.cantidadEnvios});
+  const PantallaInicio({super.key, required this.abrirEnvios, required this.abrirTarea, required this.cantidadEnvios});
 
   final VoidCallback abrirEnvios;
+  final ValueChanged<Tarea> abrirTarea;
   final int cantidadEnvios;
 
   @override
@@ -80,7 +81,26 @@ class PantallaInicio extends ConsumerWidget {
               crossAxisSpacing: 10,
               childAspectRatio: 1.15,
               children: [
-                for (final tarea in permitidas) _BotonTarea(tarea: tarea, habilitado: catalogo != null),
+                for (final tarea in permitidas)
+                  _BotonTarea(
+                    tarea: tarea,
+                    onTap: () {
+                      final String aviso;
+                      if (catalogo == null) {
+                        aviso = 'Faltan los datos del campo: conectate y actualizá.';
+                      } else if (!tareasPorAnimal.contains(tarea.tipo)) {
+                        aviso = '«${tarea.titulo}» llega en una próxima versión de la app.';
+                      } else if ((sesion.usuario.organizacionId ?? 0) <= 0) {
+                        aviso = 'Actualizá el servidor y descargá los datos del campo para habilitar los registros.';
+                      } else {
+                        abrirTarea(tarea);
+                        return;
+                      }
+                      ScaffoldMessenger.of(context)
+                        ..hideCurrentSnackBar()
+                        ..showSnackBar(SnackBar(content: Text(aviso)));
+                    },
+                  ),
               ],
             ),
           ],
@@ -169,23 +189,17 @@ class _Cifra extends StatelessWidget {
 }
 
 class _BotonTarea extends StatelessWidget {
-  const _BotonTarea({required this.tarea, required this.habilitado});
+  const _BotonTarea({required this.tarea, required this.onTap});
 
   final Tarea tarea;
-  final bool habilitado;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) => Card(
         clipBehavior: Clip.antiAlias,
         child: InkWell(
           key: Key('tarea-${tarea.tipo}'),
-          onTap: () => ScaffoldMessenger.of(context)
-            ..hideCurrentSnackBar()
-            ..showSnackBar(SnackBar(
-              content: Text(habilitado
-                  ? '«${tarea.titulo}» llega en la próxima versión de la app.'
-                  : 'Faltan los datos del campo: conectate y actualizá.'),
-            )),
+          onTap: onTap,
           child: Padding(
             padding: const EdgeInsets.all(12),
             child: Column(

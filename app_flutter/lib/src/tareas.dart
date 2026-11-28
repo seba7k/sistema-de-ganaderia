@@ -26,6 +26,8 @@ const tareas = <Tarea>[
   Tarea('SALIDA', 'Salida del predio', 'Venta, faena o traslado, con bloqueo sanitario', Icons.local_shipping_outlined, Color(0xFF9A3412)),
 ];
 
+const tareasPorAnimal = {'PESADA', 'NOTA', 'SECADO', 'PARTO'};
+
 /// Las tareas que puede hacer quien tiene estas operaciones permitidas.
 List<Tarea> tareasPermitidas(List<String> operaciones) =>
     tareas.where((t) => operaciones.contains(t.tipo)).toList();
